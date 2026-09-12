@@ -46,9 +46,14 @@
   }
   .brand{
     display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:18px;
+  }
+  .brand-left{
+    display:flex;
     align-items:baseline;
     gap:8px;
-    margin-bottom:18px;
   }
   .brand-mark{
     width:10px;height:10px;border-radius:2px;background:var(--accent);
@@ -60,6 +65,17 @@
     font-size:19px;
     letter-spacing:0.02em;
     color:var(--text);
+  }
+  .goal-btn{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    border-radius:20px;
+    padding:6px 13px;
+    font-family:'Inter',sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
   }
 
   .tabs{
@@ -143,6 +159,75 @@
   }
   .bar-fill{ height:100%; border-radius:4px; }
   .bar-value{ font-size:13px; color:var(--text-muted); width:64px; text-align:right; flex-shrink:0; }
+
+  /* GOALS */
+  .goals{
+    padding:6px 20px 4px 20px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .goal-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 16px;
+  }
+  .goal-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:9px;
+  }
+  .goal-name{ font-size:13px; color:var(--text-muted); }
+  .goal-amounts{ font-size:13px; }
+  .goal-amounts .cur{ font-weight:700; color:var(--text); }
+  .goal-amounts .tgt{ color:var(--text-muted); }
+  .goal-track{
+    height:8px;
+    background:var(--surface-2);
+    border-radius:4px;
+    overflow:hidden;
+  }
+  .goal-fill{ height:100%; border-radius:4px; }
+  .goal-note{ font-size:12px; color:var(--text-muted); margin-top:7px; }
+  .goal-empty{
+    font-size:12.5px;
+    color:var(--text-muted);
+    line-height:1.5;
+  }
+  .goal-empty a{ color:var(--accent); }
+
+  /* TREND CHART */
+  .trend{
+    padding:22px 20px 4px 20px;
+  }
+  .trend-chart{
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
+    height:90px;
+    padding-top:6px;
+  }
+  .trend-bar-wrap{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    height:100%;
+    justify-content:flex-end;
+    gap:6px;
+  }
+  .trend-bar{
+    width:100%;
+    max-width:26px;
+    border-radius:4px 4px 0 0;
+    min-height:2px;
+  }
+  .trend-label{ font-size:10.5px; color:var(--text-muted); }
+
+  /* GOAL SHEET */
+  .goal-field-note{ font-size:12px; color:var(--text-muted); margin:-6px 0 14px 0; line-height:1.5; }
 
   /* LIST */
   .list{
@@ -365,8 +450,11 @@
   <div id="main" style="display:none;">
     <header>
       <div class="brand">
-        <div class="brand-mark"></div>
-        <div class="brand-name">FINANÇAS NA ESTRADA</div>
+        <div class="brand-left">
+          <div class="brand-mark"></div>
+          <div class="brand-name">FINANÇAS NA ESTRADA</div>
+        </div>
+        <button class="goal-btn" id="btnGoals">Metas</button>
       </div>
       <div class="tabs">
         <button class="tab" data-period="dia">Hoje</button>
@@ -390,9 +478,21 @@
       </div>
     </div>
 
+    <div class="goals" id="goalsWrap"></div>
+
+    <div class="trend">
+      <div class="section-title">Lucro líquido — últimos 6 meses</div>
+      <div class="trend-chart" id="trendChart"></div>
+    </div>
+
     <div class="breakdown" id="breakdownWrap" style="display:none;">
       <div class="section-title">Ganhos por app</div>
       <div id="breakdownList"></div>
+    </div>
+
+    <div class="breakdown" id="catBreakdownWrap" style="display:none;">
+      <div class="section-title">Gastos por categoria</div>
+      <div id="catBreakdownList"></div>
     </div>
 
     <div class="list">
@@ -441,19 +541,48 @@
   </div>
 </div>
 
+<div class="overlay" id="goalOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Metas do mês</div>
+
+    <div class="field">
+      <label>Meta de faturamento (total de ganhos no mês)</label>
+      <input type="number" inputmode="decimal" class="amount-input" id="goalFaturamentoInput" placeholder="R$ 0,00" step="0.01" min="0">
+    </div>
+
+    <div class="field">
+      <label>Meta de economia (lucro líquido no mês)</label>
+      <input type="number" inputmode="decimal" class="amount-input" id="goalEconomiaInput" placeholder="R$ 0,00" step="0.01" min="0">
+      <div class="goal-field-note">É quanto você quer que sobre depois de pagar todos os gastos do mês.</div>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn-cancel" id="btnGoalCancel">Cancelar</button>
+      <button class="btn-save" id="btnGoalSave">Salvar metas</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const APPS = [
   { id:'ifood', name:'iFood', color:'#EA1D2C' },
   { id:'uber', name:'Uber', color:'#9AA1A9' },
   { id:'99', name:'99', color:'#FFD400' },
   { id:'rappi', name:'Rappi', color:'#FF441F' },
+  { id:'particular', name:'Particular', color:'#4DA3FF' },
   { id:'outro_ganho', name:'Outro', color:'#8FB300' },
 ];
 const CATS = [
   { id:'combustivel', name:'Combustível', color:'#FF7A59' },
   { id:'manutencao', name:'Manutenção', color:'#E14848' },
+  { id:'financiamento', name:'Financiamento/Prestação', color:'#C77DFF' },
+  { id:'seguro', name:'Seguro', color:'#4DA3FF' },
   { id:'alimentacao', name:'Alimentação', color:'#FFB84D' },
-  { id:'outro_gasto', name:'Outro', color:'#9AA1A9' },
+  { id:'documentacao', name:'Documentação/Multa', color:'#E14848' },
+  { id:'celular', name:'Celular/Internet', color:'#8FB300' },
+  { id:'equipamento', name:'Equipamento', color:'#9AA1A9' },
+  { id:'outro_gasto', name:'Outros', color:'#6B7280' },
 ];
 
 // >>> CÓDIGOS DE ACESSO VÁLIDOS <<<
@@ -466,6 +595,7 @@ let period = 'dia';
 let sheetType = null;
 let selectedTag = null;
 let storageOk = true;
+let metas = { faturamento: 0, economia: 0 };
 
 const $ = (id) => document.getElementById(id);
 
@@ -579,6 +709,102 @@ function render(){
   document.querySelectorAll('.entry-del').forEach(btn => {
     btn.onclick = () => deleteEntry(btn.dataset.id);
   });
+
+  // gastos por categoria (mesmo período selecionado)
+  const byCat = {};
+  filtered.filter(e => e.type === 'gasto').forEach(e => {
+    byCat[e.tag] = (byCat[e.tag] || 0) + e.value;
+  });
+  const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  if(catEntries.length === 0){
+    $('catBreakdownWrap').style.display = 'none';
+  } else {
+    $('catBreakdownWrap').style.display = 'block';
+    const maxCat = Math.max(...catEntries.map(x=>x[1]));
+    $('catBreakdownList').innerHTML = catEntries.map(([id,val]) => {
+      const info = tagInfo(CATS, id);
+      const pct = maxCat ? Math.round((val/maxCat)*100) : 0;
+      return `<div class="bar-row">
+        <div class="bar-dot" style="background:${info.color}"></div>
+        <div class="bar-name">${info.name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${info.color}"></div></div>
+        <div class="bar-value">${fmt(val)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  renderGoals();
+  renderTrend();
+}
+
+function monthKey(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+function monthTotals(year, month){
+  const ganhos = entries.filter(e => e.type === 'ganho' && new Date(e.date).getFullYear() === year && new Date(e.date).getMonth() === month)
+    .reduce((s,e)=>s+e.value,0);
+  const gastos = entries.filter(e => e.type === 'gasto' && new Date(e.date).getFullYear() === year && new Date(e.date).getMonth() === month)
+    .reduce((s,e)=>s+e.value,0);
+  return { ganhos, gastos, liquido: ganhos - gastos };
+}
+
+function renderGoals(){
+  const now = new Date();
+  const cur = monthTotals(now.getFullYear(), now.getMonth());
+
+  if(!metas.faturamento && !metas.economia){
+    $('goalsWrap').innerHTML = `<div class="goal-empty">Você ainda não definiu metas pra esse mês. Toca em <a id="goalEmptyLink">"Metas"</a> lá em cima pra configurar.</div>`;
+    const link = document.getElementById('goalEmptyLink');
+    if(link) link.onclick = openGoalSheet;
+    return;
+  }
+
+  let html = '';
+  if(metas.faturamento > 0){
+    const pct = Math.min(100, Math.round((cur.ganhos / metas.faturamento) * 100));
+    const falta = Math.max(0, metas.faturamento - cur.ganhos);
+    html += `<div class="goal-card">
+      <div class="goal-top">
+        <div class="goal-name">Faturamento do mês</div>
+        <div class="goal-amounts"><span class="cur">${fmt(cur.ganhos)}</span> <span class="tgt">/ ${fmt(metas.faturamento)}</span></div>
+      </div>
+      <div class="goal-track"><div class="goal-fill" style="width:${pct}%; background:var(--accent)"></div></div>
+      <div class="goal-note">${falta > 0 ? 'Falta ' + fmt(falta) + ' pra bater a meta' : 'Meta batida! 🎉'}</div>
+    </div>`;
+  }
+  if(metas.economia > 0){
+    const pct = Math.min(100, Math.round((Math.max(0,cur.liquido) / metas.economia) * 100));
+    const falta = Math.max(0, metas.economia - cur.liquido);
+    html += `<div class="goal-card">
+      <div class="goal-top">
+        <div class="goal-name">Economia do mês (líquido)</div>
+        <div class="goal-amounts"><span class="cur">${fmt(cur.liquido)}</span> <span class="tgt">/ ${fmt(metas.economia)}</span></div>
+      </div>
+      <div class="goal-track"><div class="goal-fill" style="width:${pct}%; background:#4DA3FF"></div></div>
+      <div class="goal-note">${falta > 0 ? 'Falta ' + fmt(falta) + ' pra bater a meta' : 'Meta batida! 🎉'}</div>
+    </div>`;
+  }
+  $('goalsWrap').innerHTML = html;
+}
+
+function renderTrend(){
+  const now = new Date();
+  const months = [];
+  for(let i = 5; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const t = monthTotals(d.getFullYear(), d.getMonth());
+    months.push({ label: d.toLocaleDateString('pt-BR', {month:'short'}).replace('.',''), liquido: t.liquido });
+  }
+  const maxAbs = Math.max(1, ...months.map(m => Math.abs(m.liquido)));
+  $('trendChart').innerHTML = months.map(m => {
+    const h = Math.max(2, Math.round((Math.abs(m.liquido) / maxAbs) * 80));
+    const color = m.liquido >= 0 ? 'var(--accent)' : 'var(--expense)';
+    return `<div class="trend-bar-wrap">
+      <div class="trend-bar" style="height:${h}px; background:${color};"></div>
+      <div class="trend-label">${m.label}</div>
+    </div>`;
+  }).join('');
 }
 
 function escapeHtml(str){
@@ -607,6 +833,8 @@ async function load(){
   try{
     const raw = localStorage.getItem('motoboy_entries');
     entries = raw ? JSON.parse(raw) : [];
+    const rawMetas = localStorage.getItem('motoboy_metas');
+    if(rawMetas) metas = JSON.parse(rawMetas);
   }catch(err){
     storageOk = false;
     entries = [];
@@ -615,6 +843,16 @@ async function load(){
   $('loading').style.display = 'none';
   $('main').style.display = 'block';
   render();
+}
+
+function persistMetas(){
+  try{
+    localStorage.setItem('motoboy_metas', JSON.stringify(metas));
+  }catch(err){
+    if(!storageOk) return;
+    storageOk = false;
+    showStorageNotice();
+  }
 }
 
 function showStorageNotice(){
@@ -696,6 +934,23 @@ $('btnSave').onclick = async () => {
   });
   await persist();
   $('overlay').classList.remove('open');
+  render();
+};
+
+// METAS
+function openGoalSheet(){
+  $('goalFaturamentoInput').value = metas.faturamento || '';
+  $('goalEconomiaInput').value = metas.economia || '';
+  $('goalOverlay').classList.add('open');
+}
+$('btnGoals').onclick = openGoalSheet;
+$('btnGoalCancel').onclick = () => $('goalOverlay').classList.remove('open');
+$('goalOverlay').onclick = (e) => { if(e.target === $('goalOverlay')) $('goalOverlay').classList.remove('open'); };
+$('btnGoalSave').onclick = () => {
+  metas.faturamento = parseFloat($('goalFaturamentoInput').value) || 0;
+  metas.economia = parseFloat($('goalEconomiaInput').value) || 0;
+  persistMetas();
+  $('goalOverlay').classList.remove('open');
   render();
 };
 </script>
