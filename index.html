@@ -686,6 +686,11 @@
     border-radius:20px 20px 0 0;
     padding:20px 20px calc(20px + env(safe-area-inset-bottom));
     animation:slideUp 0.22s ease-out;
+    max-height:92vh;
+    max-height:92dvh;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
   }
   @keyframes slideUp{ from{ transform:translateY(24px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
   .sheet-handle{
@@ -874,6 +879,51 @@
     touch-action:manipulation;
     -webkit-tap-highlight-color:transparent;
   }
+
+  /* GRÁFICOS (Recharts) */
+  .charts-wrap{ padding:18px 20px 28px; display:flex; flex-direction:column; gap:14px; }
+  .chart-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 12px 12px;
+    overflow:hidden;
+  }
+  .chart-card .section-title{ margin:0 4px 10px; color:var(--text); font-weight:600; }
+  .chart-sub{ color:var(--text-muted); font-weight:400; margin-left:6px; font-size:11.5px; }
+  .chart-box{ position:relative; width:100%; }
+  .recharts-wrapper, .recharts-wrapper *{ outline:none; font-family:'Inter',sans-serif; }
+  .chart-center{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; pointer-events:none;
+  }
+  .chart-center-k{ font-size:11px; color:var(--text-muted); }
+  .chart-center-v{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:20px; }
+  .chart-empty{ padding:26px 8px; text-align:center; font-size:12.5px; color:var(--text-muted); line-height:1.5; }
+  .chart-retry{
+    margin-top:10px; background:var(--surface-2); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:8px 14px; font-family:inherit; font-size:12.5px; cursor:pointer;
+  }
+  .chart-legend{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chart-legend-item{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 10px;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:999px;
+    color:var(--text); font-family:inherit; font-size:11.5px; cursor:pointer;
+    touch-action:manipulation; transition:opacity .2s, background .2s;
+  }
+  .chart-legend-item.off{ opacity:.4; text-decoration:line-through; }
+  .chart-legend-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; display:inline-block; }
+  .chart-legend-pct{ color:var(--text-muted); font-variant-numeric:tabular-nums; }
+  .chart-tip{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px; font-size:12px; min-width:110px; box-shadow:0 6px 18px rgba(0,0,0,.35);
+  }
+  .chart-tip-title{ color:var(--text-muted); font-size:11px; margin-bottom:4px; }
+  .chart-tip-big{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:18px; }
+  .chart-tip-sub{ color:var(--text-muted); font-size:11.5px; }
+  .chart-tip-row{ display:flex; align-items:center; gap:6px; margin-top:3px; }
+  .chart-tip-name{ flex:1; color:var(--text-muted); }
+  .chart-tip-val{ font-weight:600; font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -1007,6 +1057,25 @@
       <div class="trend">
         <div class="section-title">Lucro líquido — últimos 6 meses</div>
         <div class="trend-chart" id="trendChart"></div>
+      </div>
+
+      <div class="charts-wrap" id="chartsWrap">
+        <div class="chart-card">
+          <div class="section-title">Lucro Diário<span class="chart-sub">mês atual</span></div>
+          <div id="chartLucro"></div>
+        </div>
+        <div class="chart-card">
+          <div class="section-title">Ganhos por Aplicativo<span class="chart-sub">mês atual</span></div>
+          <div id="chartGanhosApp"></div>
+        </div>
+        <div class="chart-card">
+          <div class="section-title">Gastos por Categoria<span class="chart-sub">mês atual</span></div>
+          <div id="chartGastosCat"></div>
+        </div>
+        <div class="chart-card">
+          <div class="section-title">Distribuição dos Gastos<span class="chart-sub">mês atual</span></div>
+          <div id="chartDistGastos"></div>
+        </div>
       </div>
     </div>
 
@@ -1569,6 +1638,7 @@ function renderDashboard(){
 
   renderDashCards(monthEntries, cur);
   renderExtraMetrics(monthEntries, cur);
+  try{ renderCharts(); }catch(err){}
 }
 
 function renderDashCards(monthEntries, cur){
@@ -1991,6 +2061,7 @@ function switchView(view){
 
   if(view === 'perfil') renderPerfil();
   if(view === 'dividas') renderDividas();
+  if(view === 'dashboard'){ try{ renderCharts(); }catch(err){} }
 }
 
 document.querySelectorAll('.nav-item[data-view]').forEach(n => {
@@ -2145,6 +2216,8 @@ function openDebtSheet(){
   });
 
   $('debtOverlay').classList.add('open');
+  const debtSheet = $('debtOverlay').querySelector('.sheet');
+  if(debtSheet) debtSheet.scrollTop = 0;   // sempre abre mostrando o Nome no topo
 }
 $('btnNovaDivida').onclick = openDebtSheet;
 $('btnDebtCancel').onclick = () => $('debtOverlay').classList.remove('open');
@@ -2199,6 +2272,319 @@ $('btnDebtSave').onclick = () => {
   renderDividas();
   renderPerfilDividas();
 };
+</script>
+
+<script>
+// ===== Sprint 1.2E — Gráficos financeiros (Recharts) =====
+// As bibliotecas são carregadas só quando o usuário abre o Dashboard pela primeira vez.
+(function(){
+  'use strict';
+
+  var LIBS = [
+    'https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js',
+    'https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js',
+    'https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js',
+    'https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js',
+    'https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js'
+  ];
+  var IDS = { lucro:'chartLucro', apps:'chartGanhosApp', cats:'chartGastosCat', dist:'chartDistGastos' };
+  var C = { grid:'#34393F', muted:'#9AA1A9', text:'#ECEEF0', accent:'#C6FF00', ganho:'#4DA3FF', gasto:'#FF7A59', bg:'#1F2328' };
+  var CAT_COLOR_FIX = { documentacao:'#FF5FA2' }; // evita duas categorias com a mesma cor nos gráficos
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  var state = 'idle';           // idle | loading | ready | failed
+  var roots = {};
+  var loaded = {};
+  var K = null;                 // componentes (montados no init)
+
+  // ---------- utilidades ----------
+  function fmtInt(v){ return 'R$ ' + Math.round(v).toLocaleString('pt-BR'); }
+  function pctStr(n){ return n.toLocaleString('pt-BR', { maximumFractionDigits:1 }) + '%'; }
+  function shortAxis(v){
+    var a = Math.abs(v);
+    if(a >= 1000) return (v/1000).toLocaleString('pt-BR', { maximumFractionDigits:1 }) + 'k';
+    return String(Math.round(v));
+  }
+  function truncate(s, n){ return s.length > n ? s.slice(0, n-1) + '…' : s; }
+  function labelColor(hex){
+    var n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299*r + 0.587*g + 0.114*b) > 150 ? '#14171A' : '#FFFFFF';
+  }
+  function round2(n){ return Math.round(n * 100) / 100; }
+
+  // ---------- dados (mês atual) ----------
+  function dataset(){
+    var now = new Date(), y = now.getFullYear(), m = now.getMonth(), today = now.getDate();
+    var daily = [];
+    for(var d = 1; d <= today; d++) daily.push({ dia:d, ganhos:0, gastos:0, lucro:0 });
+    var ganhoApp = {}, gastoCat = {};
+
+    entries.forEach(function(e){
+      var dt = new Date(e.date);
+      if(dt.getFullYear() !== y || dt.getMonth() !== m) return;
+      var row = daily[dt.getDate() - 1];
+      if(e.type === 'ganho'){
+        if(row) row.ganhos += e.value;
+        var k = ['ifood','uber','99','rappi'].indexOf(e.tag) >= 0 ? e.tag : 'outros';
+        ganhoApp[k] = (ganhoApp[k] || 0) + e.value;
+      } else if(e.type === 'gasto'){
+        if(row) row.gastos += e.value;
+        gastoCat[e.tag] = (gastoCat[e.tag] || 0) + e.value;
+      }
+    });
+    daily.forEach(function(r){ r.ganhos = round2(r.ganhos); r.gastos = round2(r.gastos); r.lucro = round2(r.ganhos - r.gastos); });
+
+    var apps = [];
+    [['ifood','iFood','#EA1D2C'],['uber','Uber','#9AA1A9'],['99','99','#FFD400'],['rappi','Rappi','#FF441F'],['outros','Outros','#8FB300']]
+      .forEach(function(a){ if(ganhoApp[a[0]] > 0) apps.push({ id:a[0], name:a[1], color:a[2], value:round2(ganhoApp[a[0]]) }); });
+
+    var cats = CATS.filter(function(c){ return gastoCat[c.id] > 0; }).map(function(c){
+      return { id:c.id, name:c.name, color:CAT_COLOR_FIX[c.id] || c.color, value:round2(gastoCat[c.id]) };
+    }).sort(function(a,b){ return b.value - a.value; });
+
+    var hasAny = daily.some(function(r){ return r.ganhos || r.gastos; });
+    return { daily:daily, apps:apps, cats:cats, hasAny:hasAny };
+  }
+
+  // ---------- carregamento das bibliotecas ----------
+  function loadScript(src){
+    return new Promise(function(resolve, reject){
+      if(loaded[src]) return resolve();
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = function(){ loaded[src] = true; resolve(); };
+      s.onerror = function(){ reject(new Error('falha: ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function setAll(html){
+    Object.keys(IDS).forEach(function(k){
+      var n = document.getElementById(IDS[k]);
+      if(n && !roots[k]) n.innerHTML = html;
+    });
+  }
+
+  function load(){
+    state = 'loading';
+    setAll('<div class="chart-empty">Carregando gráficos…</div>');
+    LIBS.reduce(function(p, src){ return p.then(function(){ return loadScript(src); }); }, Promise.resolve())
+      .then(function(){
+        if(!window.React || !window.ReactDOM || !window.ReactDOM.createRoot || !window.Recharts) throw new Error('libs incompletas');
+        init();
+        state = 'ready';
+        setAll('');
+        draw();
+      })
+      .catch(function(){
+        state = 'failed';
+        setAll('<div class="chart-empty">Não deu pra carregar os gráficos.<br>Confira sua conexão com a internet.<br><button type="button" class="chart-retry">Tentar de novo</button></div>');
+        document.querySelectorAll('.chart-retry').forEach(function(b){
+          b.onclick = function(){ load(); };
+        });
+      });
+  }
+
+  // ---------- componentes ----------
+  function init(){
+    var R = window.Recharts, React = window.React, ReactDOM = window.ReactDOM;
+    var h = React.createElement, useState = React.useState;
+
+    function Boundary(props){ React.Component.call(this, props); this.state = { err:false }; }
+    Boundary.prototype = Object.create(React.Component.prototype);
+    Boundary.prototype.constructor = Boundary;
+    Boundary.getDerivedStateFromError = function(){ return { err:true }; };
+    Boundary.prototype.render = function(){
+      return this.state.err ? h('div', { className:'chart-empty' }, 'Não foi possível desenhar este gráfico.') : this.props.children;
+    };
+
+    function Empty(props){ return h('div', { className:'chart-empty' }, props.text); }
+
+    function Tip(props){
+      return h('div', { className:'chart-tip' },
+        props.title ? h('div', { className:'chart-tip-title' }, props.title) : null,
+        props.children);
+    }
+
+    // legenda interativa: toca pra esconder/mostrar
+    function LegendList(props){
+      return h('div', { className:'chart-legend' }, props.items.map(function(it){
+        var off = !!props.hidden[it.id];
+        var pct = (props.showPct && !off && props.total > 0) ? pctStr(it.value / props.total * 100) : '';
+        return h('button', {
+          key:it.id, type:'button', className:'chart-legend-item' + (off ? ' off' : ''),
+          'aria-pressed':String(!off), onClick:function(){ props.onToggle(it.id); }
+        },
+          h('span', { className:'chart-legend-dot', style:{ background:it.color } }),
+          h('span', null, it.name),
+          pct ? h('span', { className:'chart-legend-pct' }, pct) : null);
+      }));
+    }
+
+    function makeToggle(ids, hidden, setHidden){
+      return function(id){
+        var next = Object.assign({}, hidden);
+        if(next[id]){ delete next[id]; }
+        else {
+          var visibleCount = ids.filter(function(i){ return !hidden[i]; }).length;
+          if(visibleCount <= 1) return;   // sempre deixa pelo menos 1 visível
+          next[id] = true;
+        }
+        setHidden(next);
+      };
+    }
+
+    var RAD = Math.PI / 180;
+    function pieLabel(p){
+      if(p.percent < 0.07) return null;
+      var r = p.innerRadius + (p.outerRadius - p.innerRadius) * 0.5;
+      var x = p.cx + r * Math.cos(-p.midAngle * RAD);
+      var y = p.cy + r * Math.sin(-p.midAngle * RAD);
+      return h('text', { x:x, y:y, fill:labelColor(p.fill || '#888888'), textAnchor:'middle', dominantBaseline:'central', fontSize:11, fontWeight:700 },
+        Math.round(p.percent * 100) + '%');
+    }
+
+    function PieCard(props){
+      var st = useState({}), hidden = st[0], setHidden = st[1];
+      var items = props.data;
+      var visible = items.filter(function(d){ return !hidden[d.id]; });
+      var total = visible.reduce(function(s, d){ return s + d.value; }, 0);
+      var ids = items.map(function(d){ return d.id; });
+      return h('div', null,
+        h('div', { className:'chart-box' },
+          h(R.ResponsiveContainer, { width:'100%', height:230 },
+            h(R.PieChart, null,
+              h(R.Pie, {
+                data:visible, dataKey:'value', nameKey:'name',
+                innerRadius:props.donut ? 58 : 0, outerRadius:92,
+                paddingAngle:visible.length > 1 ? 2 : 0,
+                stroke:C.bg, strokeWidth:2, labelLine:false, label:pieLabel,
+                isAnimationActive:!reduceMotion, animationDuration:800, animationEasing:'ease-out'
+              }, visible.map(function(d){ return h(R.Cell, { key:d.id, fill:d.color }); })),
+              h(R.Tooltip, {
+                wrapperStyle:{ outline:'none', zIndex:5 },
+                content:function(p){
+                  if(!p.active || !p.payload || !p.payload.length) return null;
+                  var d = p.payload[0].payload;
+                  return h(Tip, { title:d.name },
+                    h('div', { className:'chart-tip-big' }, fmt(d.value)),
+                    h('div', { className:'chart-tip-sub' }, pctStr(d.value / total * 100) + ' do total'));
+                }
+              }))),
+          props.donut ? h('div', { className:'chart-center' },
+            h('div', { className:'chart-center-k' }, 'Total'),
+            h('div', { className:'chart-center-v' }, fmt(total))) : null),
+        h(LegendList, { items:items, hidden:hidden, total:total, showPct:true, onToggle:makeToggle(ids, hidden, setHidden) }));
+    }
+
+    function BarCard(props){
+      var st = useState({}), hidden = st[0], setHidden = st[1];
+      var items = props.data;
+      var visible = items.filter(function(d){ return !hidden[d.id]; });
+      var total = visible.reduce(function(s, d){ return s + d.value; }, 0);
+      var list = visible.map(function(d){ return Object.assign({}, d, { pct:d.value / total * 100 }); });
+      var ids = items.map(function(d){ return d.id; });
+      return h('div', null,
+        h(R.ResponsiveContainer, { width:'100%', height:list.length * 38 + 16 },
+          h(R.BarChart, { data:list, layout:'vertical', margin:{ top:4, right:96, bottom:4, left:0 } },
+            h(R.XAxis, { type:'number', hide:true, domain:[0, 'dataMax'] }),
+            h(R.YAxis, {
+              type:'category', dataKey:'name', width:104, tickLine:false, axisLine:false,
+              tick:{ fill:C.text, fontSize:11.5 }, tickFormatter:function(v){ return truncate(v, 15); }
+            }),
+            h(R.Tooltip, {
+              cursor:{ fill:'rgba(255,255,255,0.05)' }, wrapperStyle:{ outline:'none', zIndex:5 },
+              content:function(p){
+                if(!p.active || !p.payload || !p.payload.length) return null;
+                var d = p.payload[0].payload;
+                return h(Tip, { title:d.name },
+                  h('div', { className:'chart-tip-big' }, fmt(d.value)),
+                  h('div', { className:'chart-tip-sub' }, pctStr(d.pct) + ' dos gastos'));
+              }
+            }),
+            h(R.Bar, {
+              dataKey:'value', barSize:18, radius:[0, 6, 6, 0],
+              isAnimationActive:!reduceMotion, animationDuration:800, animationEasing:'ease-out'
+            },
+              list.map(function(d){ return h(R.Cell, { key:d.id, fill:d.color }); }),
+              h(R.LabelList, {
+                dataKey:'value', position:'right',
+                content:function(p){
+                  var d = list[p.index];
+                  if(!d) return null;
+                  return h('text', { x:p.x + p.width + 6, y:p.y + p.height / 2, fill:C.text, fontSize:11, dominantBaseline:'central' },
+                    fmtInt(d.value) + ' · ' + Math.round(d.pct) + '%');
+                }
+              })))),
+        h(LegendList, { items:items, hidden:hidden, total:total, showPct:false, onToggle:makeToggle(ids, hidden, setHidden) }));
+    }
+
+    var SERIES = [
+      { id:'lucro',  name:'Lucro',  color:C.accent, w:3 },
+      { id:'ganhos', name:'Ganhos', color:C.ganho,  w:2 },
+      { id:'gastos', name:'Gastos', color:C.gasto,  w:2 }
+    ];
+
+    function LineCard(props){
+      var st = useState({ ganhos:true, gastos:true }), hidden = st[0], setHidden = st[1];
+      var ids = SERIES.map(function(s){ return s.id; });
+      var few = props.data.length <= 3;
+      return h('div', null,
+        h(R.ResponsiveContainer, { width:'100%', height:220 },
+          h(R.LineChart, { data:props.data, margin:{ top:8, right:12, left:0, bottom:0 } },
+            h(R.CartesianGrid, { strokeDasharray:'3 3', stroke:C.grid, vertical:false }),
+            h(R.XAxis, { dataKey:'dia', tick:{ fill:C.muted, fontSize:11 }, tickLine:false, axisLine:{ stroke:C.grid }, interval:'preserveStartEnd', minTickGap:14 }),
+            h(R.YAxis, { width:44, tick:{ fill:C.muted, fontSize:11 }, tickLine:false, axisLine:false, tickFormatter:shortAxis }),
+            h(R.ReferenceLine, { y:0, stroke:C.grid }),
+            h(R.Tooltip, {
+              cursor:{ stroke:C.muted, strokeDasharray:'3 3' }, wrapperStyle:{ outline:'none', zIndex:5 },
+              content:function(p){
+                if(!p.active || !p.payload || !p.payload.length) return null;
+                return h(Tip, { title:'Dia ' + p.label }, p.payload.map(function(it){
+                  return h('div', { className:'chart-tip-row', key:it.dataKey },
+                    h('span', { className:'chart-legend-dot', style:{ background:it.color } }),
+                    h('span', { className:'chart-tip-name' }, it.name),
+                    h('span', { className:'chart-tip-val' }, fmt(it.value)));
+                }));
+              }
+            }),
+            SERIES.filter(function(s){ return !hidden[s.id]; }).map(function(s){
+              return h(R.Line, {
+                key:s.id, type:'monotone', dataKey:s.id, name:s.name, stroke:s.color, strokeWidth:s.w,
+                dot:few ? { r:3, fill:s.color } : false, activeDot:{ r:5 },
+                isAnimationActive:!reduceMotion, animationDuration:800, animationEasing:'ease-out'
+              });
+            }))),
+        h(LegendList, { items:SERIES, hidden:hidden, total:0, showPct:false, onToggle:makeToggle(ids, hidden, setHidden) }));
+    }
+
+    K = { h:h, ReactDOM:ReactDOM, Boundary:Boundary, Empty:Empty, PieCard:PieCard, BarCard:BarCard, LineCard:LineCard };
+  }
+
+  // ---------- desenho ----------
+  function mount(key, el){
+    var node = document.getElementById(IDS[key]);
+    if(!node) return;
+    if(!roots[key]) roots[key] = K.ReactDOM.createRoot(node);
+    roots[key].render(K.h(K.Boundary, null, el));
+  }
+
+  function draw(){
+    var d = dataset(), h = K.h;
+    var none = function(t){ return h(K.Empty, { text:t }); };
+    mount('lucro', d.hasAny ? h(K.LineCard, { data:d.daily }) : none('Nenhum lançamento esse mês ainda.'));
+    mount('apps',  d.apps.length ? h(K.PieCard, { data:d.apps, donut:false }) : none('Nenhum ganho lançado esse mês ainda.'));
+    mount('cats',  d.cats.length ? h(K.BarCard, { data:d.cats }) : none('Nenhum gasto lançado esse mês ainda.'));
+    mount('dist',  d.cats.length ? h(K.PieCard, { data:d.cats, donut:true }) : none('Nenhum gasto lançado esse mês ainda.'));
+  }
+
+  // chamada pelo app sempre que os dados mudam ou o Dashboard abre
+  window.renderCharts = function(){
+    if(state === 'ready'){ draw(); return; }
+    if(state === 'loading') return;
+    if(currentView === 'dashboard') load();
+  };
+})();
 </script>
 </body>
 </html>
