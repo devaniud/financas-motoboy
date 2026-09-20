@@ -204,6 +204,8 @@
     font-weight:600;
     cursor:pointer;
   }
+  .logout-btn{ color:var(--danger); border-color:rgba(225,72,72,0.35); }
+  .perfil-code-value{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:17px; letter-spacing:0.5px; color:var(--text); }
   .goal-empty{
     font-size:12.5px;
     color:var(--text-muted);
@@ -1229,6 +1231,14 @@
         </div>
       </div>
 
+      <div class="perfil-card">
+        <div class="perfil-card-title">Acesso</div>
+        <div class="goal-note" style="margin:0 0 12px 0;">Código usado pra liberar o app: <span class="perfil-code-value" id="perfilCodigoAcesso">—</span></div>
+        <div class="goal-adjust-row" style="margin:0;">
+          <button class="goal-adjust-btn logout-btn" id="btnLogout">Sair</button>
+        </div>
+      </div>
+
       <div class="perfil-about">
         Finanças na Estrada — feito pra motoboy controlar o dinheiro sem complicação.<br><br>
         Seus lançamentos e metas ficam salvos só neste navegador/dispositivo.
@@ -1385,6 +1395,14 @@
     </div>
 
     <div class="field">
+      <label>Frequência</label>
+      <div class="tipo-toggle">
+        <div class="tipo-chip selected" id="debtFreqMensal" data-freq="mensal">Mensal</div>
+        <div class="tipo-chip" id="debtFreqSemanal" data-freq="semanal">Semanal</div>
+      </div>
+    </div>
+
+    <div class="field" id="debtMensalTipoField">
       <label>Tipo</label>
       <div class="tipo-toggle">
         <div class="tipo-chip selected" id="debtTipoFixa" data-tipo="fixa">Fixa</div>
@@ -1392,20 +1410,23 @@
       </div>
     </div>
 
-    <div class="field">
+    <div class="field" id="debtVencimentoField">
       <label>Dia de vencimento (1–31)</label>
       <input type="number" class="text-input" id="debtVencimentoInput" placeholder="Ex: 10" min="1" max="31">
     </div>
 
-    <div id="debtFixaFields">
-      <div class="field">
-        <label>Quantidade de parcelas (0 = recorrente, sem fim)</label>
-        <input type="number" class="text-input" id="debtParcelasInput" placeholder="Ex: 12" min="0">
-      </div>
-      <div class="field">
-        <label>Data inicial</label>
-        <input type="date" class="text-input" id="debtDataInicialInput">
-      </div>
+    <div class="field" id="debtDiaSemanaField" style="display:none;">
+      <label>Dia da semana do pagamento</label>
+      <div class="chip-row" id="debtDiaSemanaChips"></div>
+    </div>
+
+    <div class="field" id="debtParcelasField">
+      <label>Quantidade de parcelas (0 = recorrente, sem fim)</label>
+      <input type="number" class="text-input" id="debtParcelasInput" placeholder="Ex: 12" min="0">
+    </div>
+    <div class="field" id="debtDataInicialField">
+      <label id="debtDataInicialLabel">Data inicial</label>
+      <input type="date" class="text-input" id="debtDataInicialInput">
     </div>
 
     <div class="field">
@@ -1441,6 +1462,8 @@ const CATS = [
   { id:'equipamento', name:'Equipamento', color:'#9AA1A9' },
   { id:'outro_gasto', name:'Outros', color:'#6B7280' },
 ];
+const WEEKDAY_NAMES = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+const WEEKDAY_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const DEBT_CATS = [
   { id:'financiamento', name:'Financiamento', color:'#C77DFF' },
   { id:'agua', name:'Água', color:'#4DA3FF' },
@@ -1453,10 +1476,9 @@ const DEBT_CATS = [
   { id:'outros_divida', name:'Outros', color:'#6B7280' },
 ];
 
-// >>> CÓDIGOS DE ACESSO VÁLIDOS <<<
-// Adicione aqui os códigos que você quer liberar pros compradores.
-// Pode ser um código único pra todo mundo, ou um por cliente — sua escolha.
-const ACCESS_CODES = ['MOTOBOY10'];
+// >>> VALIDAÇÃO DE LICENÇA (Supabase) <<<
+// Endereço da função que confere o código de acesso na tabela "licenses".
+const VALIDATE_LICENSE_URL = 'https://irfhbttlwrowspfavzoj.supabase.co/functions/v1/validate-license';
 
 let entries = [];
 let period = 'dia';
@@ -1470,6 +1492,8 @@ let debts = [];
 let debtsViewDate = new Date();
 let debtTipoSelected = 'fixa';
 let debtSelectedCat = null;
+let debtFreqSelected = 'mensal';
+let debtDiaSemanaSelected = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -1492,21 +1516,64 @@ function checkAccess(){
   }
 }
 
-function tryUnlock(){
+async function tryUnlock(){
   const code = $('lockInput').value.trim().toUpperCase();
-  if(ACCESS_CODES.includes(code)){
-    try{ localStorage.setItem('motoboy_unlocked', '1'); }catch(err){}
-    $('lock').style.display = 'none';
-    $('app').style.display = 'flex';
-    $('bottomNav').style.display = 'flex';
-    load();
-  } else {
-    $('lockError').textContent = 'Código inválido. Confira e tente de novo.';
+  $('lockError').textContent = '';
+
+  if(!code){
+    $('lockError').textContent = 'Digite o código de acesso.';
+    return;
   }
+
+  const btn = $('lockBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try{
+    const res = await fetch(VALIDATE_LICENSE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: code })
+    });
+    const data = await res.json();
+
+    if(data && data.valid){
+      try{
+        localStorage.setItem('motoboy_unlocked', '1');
+        localStorage.setItem('motoboy_unlocked_code', code);
+      }catch(err){}
+      $('lock').style.display = 'none';
+      $('app').style.display = 'flex';
+      $('bottomNav').style.display = 'flex';
+      load();
+    } else {
+      $('lockError').textContent = (data && data.error) ? data.error : 'Código inválido. Confira e tente de novo.';
+    }
+  } catch(err){
+    $('lockError').textContent = 'Não foi possível verificar agora. Confira sua internet e tente de novo.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+function logout(){
+  try{ localStorage.removeItem('motoboy_unlocked'); }catch(err){}
+  $('app').style.display = 'none';
+  $('bottomNav').style.display = 'none';
+  $('lockInput').value = '';
+  $('lockError').textContent = '';
+  $('lock').style.display = 'flex';
 }
 
 $('lockBtn').addEventListener('click', tryUnlock);
 $('lockInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') tryUnlock(); });
+$('btnLogout').addEventListener('click', () => {
+  if(confirm('Sair do app? Seus dados continuam salvos neste aparelho — é só digitar o código de acesso de novo pra entrar.')){
+    logout();
+  }
+});
 checkAccess();
 
 function fmt(n){
@@ -1673,11 +1740,9 @@ function upcomingDebts(limit){
   [0, 1].forEach(off => {
     const ref = new Date(now.getFullYear(), now.getMonth() + off, 1);
     const y = ref.getFullYear(), m = ref.getMonth();
-    const lastDay = new Date(y, m + 1, 0).getDate();
     debtsForMonth(y, m).forEach(({debt, status}) => {
       if(status.paid) return;
-      const due = new Date(y, m, Math.min(debt.vencimentoDia || 1, lastDay));
-      out.push({ debt, due, days: Math.round((due - todayStart) / 86400000) });
+      out.push({ debt, due: status.occDate, days: Math.round((status.occDate - todayStart) / 86400000) });
     });
   });
   out.sort((a,b) => a.due - b.due);
@@ -1766,6 +1831,13 @@ function renderPerfil(){
   renderPerfilId();
   renderPerfilStats();
   renderPerfilDividas();
+  renderPerfilAcesso();
+}
+
+function renderPerfilAcesso(){
+  let code = '';
+  try{ code = localStorage.getItem('motoboy_unlocked_code') || ''; }catch(err){}
+  $('perfilCodigoAcesso').textContent = code || 'não registrado';
 }
 
 function renderPerfilId(){
@@ -1975,48 +2047,83 @@ function monthTotals(year, month){
 
 // ===== DÍVIDAS =====
 
-// retorna { active, parcelaAtual, parcelasRestantes, paid } de uma dívida pra um mês (year, month 0-indexed)
-function debtStatusForMonth(d, year, month){
+// retorna a lista de ocorrências (uma dívida pode gerar mais de uma no mesmo mês, ex: dívida semanal)
+// cada ocorrência: { active, occDate, occKey, paid, parcelaAtual, parcelasRestantes }
+function debtOccurrencesForMonth(d, year, month){
+  const lastDay = new Date(year, month + 1, 0).getDate();
+
+  if(d.frequencia === 'semanal'){
+    const start = d.dataInicial ? new Date(d.dataInicial + 'T00:00:00') : null;
+    const out = [];
+    for(let day = 1; day <= lastDay; day++){
+      const dt = new Date(year, month, day);
+      if(dt.getDay() !== d.diaSemana) continue;
+      if(start && dt < start) continue;
+      const occKey = dt.toISOString().slice(0,10);
+      out.push({
+        active: true,
+        occDate: dt,
+        occKey,
+        paid: (d.paidWeeks || []).includes(occKey),
+        parcelaAtual: null,
+        parcelasRestantes: null,
+      });
+    }
+    return out;
+  }
+
   const mKey = year + '-' + String(month+1).padStart(2,'0');
   if(d.tipo === 'variavel'){
-    return {
-      active: d.referenceMonth === mKey,
+    if(d.referenceMonth !== mKey) return [];
+    return [{
+      active: true,
+      occDate: new Date(year, month, Math.min(d.vencimentoDia || 1, lastDay)),
+      occKey: mKey,
+      paid: !!d.paid,
       parcelaAtual: null,
       parcelasRestantes: null,
-      paid: !!d.paid,
-    };
+    }];
   }
-  // fixa
+  // fixa mensal
   const inicio = new Date(d.dataInicial + 'T00:00:00');
   const mesesDesdeInicio = (year - inicio.getFullYear()) * 12 + (month - inicio.getMonth());
   const parcelaAtual = mesesDesdeInicio + 1;
   const total = d.parcelasTotal || 0;
   const active = mesesDesdeInicio >= 0 && (total === 0 || parcelaAtual <= total);
-  return {
-    active,
-    parcelaAtual: active ? parcelaAtual : null,
-    parcelasRestantes: (active && total > 0) ? Math.max(0, total - parcelaAtual) : null,
+  if(!active) return [];
+  return [{
+    active: true,
+    occDate: new Date(year, month, Math.min(d.vencimentoDia || 1, lastDay)),
+    occKey: mKey,
     paid: (d.paidMonths || []).includes(mKey),
-  };
+    parcelaAtual,
+    parcelasRestantes: total > 0 ? Math.max(0, total - parcelaAtual) : null,
+  }];
 }
 
 function debtsForMonth(year, month){
-  return debts
-    .map(d => ({ debt: d, status: debtStatusForMonth(d, year, month) }))
-    .filter(x => x.status.active);
+  const out = [];
+  debts.forEach(d => {
+    debtOccurrencesForMonth(d, year, month).forEach(status => out.push({ debt: d, status }));
+  });
+  return out;
 }
 
-function toggleDebtPaid(id, year, month){
+function toggleDebtPaid(id, occKey){
   const d = debts.find(x => x.id === id);
   if(!d) return;
-  const mKey = year + '-' + String(month+1).padStart(2,'0');
-  if(d.tipo === 'variavel'){
+  if(d.frequencia === 'semanal'){
+    d.paidWeeks = d.paidWeeks || [];
+    const idx = d.paidWeeks.indexOf(occKey);
+    if(idx >= 0) d.paidWeeks.splice(idx, 1);
+    else d.paidWeeks.push(occKey);
+  } else if(d.tipo === 'variavel'){
     d.paid = !d.paid;
   } else {
     d.paidMonths = d.paidMonths || [];
-    const idx = d.paidMonths.indexOf(mKey);
+    const idx = d.paidMonths.indexOf(occKey);
     if(idx >= 0) d.paidMonths.splice(idx, 1);
-    else d.paidMonths.push(mKey);
+    else d.paidMonths.push(occKey);
   }
   persistDebts();
   renderDividas();
@@ -2033,12 +2140,11 @@ function renderDividas(){
   const totalPago = list.filter(x => x.status.paid).reduce((s,x) => s + x.debt.valor, 0);
   const totalPendente = totalDividas - totalPago;
 
-  const today = new Date();
   const pendentes = list.filter(x => !x.status.paid);
   let proximoVenc = '—';
   if(pendentes.length){
-    const sorted = [...pendentes].sort((a,b) => a.debt.vencimentoDia - b.debt.vencimentoDia);
-    proximoVenc = 'dia ' + sorted[0].debt.vencimentoDia;
+    const sorted = [...pendentes].sort((a,b) => a.status.occDate - b.status.occDate);
+    proximoVenc = sorted[0].status.occDate.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
   }
 
   $('debtCards').innerHTML = `
@@ -2065,12 +2171,19 @@ function renderDividas(){
     return;
   }
 
-  const sortedList = [...list].sort((a,b) => a.debt.vencimentoDia - b.debt.vencimentoDia);
+  const sortedList = [...list].sort((a,b) => a.status.occDate - b.status.occDate);
   $('debtList').innerHTML = sortedList.map(({debt, status}) => {
     const info = tagInfo(DEBT_CATS, debt.categoria);
-    const tipoTag = debt.tipo === 'fixa'
-      ? (debt.parcelasTotal > 0 ? `Fixa ${status.parcelaAtual}/${debt.parcelasTotal}` : 'Fixa recorrente')
-      : 'Variável';
+    let tipoTag, vencTag;
+    if(debt.frequencia === 'semanal'){
+      tipoTag = 'Semanal';
+      vencTag = 'toda ' + WEEKDAY_SHORT[debt.diaSemana] + ' · ' + status.occDate.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+    } else {
+      tipoTag = debt.tipo === 'fixa'
+        ? (debt.parcelasTotal > 0 ? `Fixa ${status.parcelaAtual}/${debt.parcelasTotal}` : 'Fixa recorrente')
+        : 'Variável';
+      vencTag = 'vence dia ' + debt.vencimentoDia;
+    }
     return `<div class="debt-row ${status.paid ? 'paid' : ''}">
       <div class="debt-row-top">
         <div class="debt-dot" style="background:${info.color}"></div>
@@ -2081,16 +2194,16 @@ function renderDividas(){
         <div class="debt-tags">
           <span class="debt-tag">${info.name}</span>
           <span class="debt-tag">${tipoTag}</span>
-          <span class="debt-tag">vence dia ${debt.vencimentoDia}</span>
+          <span class="debt-tag">${vencTag}</span>
         </div>
-        <button class="debt-pay-btn ${status.paid ? 'is-paid' : ''}" data-id="${debt.id}">${status.paid ? '✓ Paga' : 'Marcar paga'}</button>
+        <button class="debt-pay-btn ${status.paid ? 'is-paid' : ''}" data-id="${debt.id}" data-occ="${status.occKey}">${status.paid ? '✓ Paga' : 'Marcar paga'}</button>
       </div>
       ${debt.observacao ? `<div class="debt-note">${escapeHtml(debt.observacao)}</div>` : ''}
     </div>`;
   }).join('');
 
   document.querySelectorAll('.debt-pay-btn').forEach(btn => {
-    btn.onclick = () => toggleDebtPaid(btn.dataset.id, year, month);
+    btn.onclick = () => toggleDebtPaid(btn.dataset.id, btn.dataset.occ);
   });
 }
 
@@ -2227,6 +2340,7 @@ async function load(){
     if(rawPerfil) perfilData = Object.assign({ nome: '', moto: '' }, JSON.parse(rawPerfil));
     const rawDebts = localStorage.getItem('motoboy_debts');
     debts = rawDebts ? JSON.parse(rawDebts) : [];
+    debts.forEach(d => { if(!d.frequencia) d.frequencia = 'mensal'; });
   }catch(err){
     storageOk = false;
     entries = [];
@@ -2435,6 +2549,18 @@ $('btnDividasNext').onclick = () => {
 };
 
 // SHEET DE NOVA DÍVIDA
+function updateDebtFieldsVisibility(){
+  const mensal = debtFreqSelected === 'mensal';
+  $('debtMensalTipoField').style.display = mensal ? 'block' : 'none';
+  $('debtVencimentoField').style.display = mensal ? 'block' : 'none';
+  $('debtDiaSemanaField').style.display = mensal ? 'none' : 'block';
+  const showParcelas = mensal && debtTipoSelected === 'fixa';
+  $('debtParcelasField').style.display = showParcelas ? 'block' : 'none';
+  const showDataInicial = showParcelas || !mensal;
+  $('debtDataInicialField').style.display = showDataInicial ? 'block' : 'none';
+  $('debtDataInicialLabel').textContent = mensal ? 'Data inicial' : 'A partir de (opcional)';
+}
+
 function openDebtSheet(){
   $('debtNomeInput').value = '';
   $('debtValorInput').value = '';
@@ -2445,9 +2571,13 @@ function openDebtSheet(){
   $('debtError').textContent = '';
   debtSelectedCat = null;
   debtTipoSelected = 'fixa';
+  debtFreqSelected = 'mensal';
+  debtDiaSemanaSelected = null;
   $('debtTipoFixa').classList.add('selected');
   $('debtTipoVariavel').classList.remove('selected');
-  $('debtFixaFields').style.display = 'block';
+  $('debtFreqMensal').classList.add('selected');
+  $('debtFreqSemanal').classList.remove('selected');
+  updateDebtFieldsVisibility();
 
   $('debtCatChips').innerHTML = DEBT_CATS.map(c => `<div class="chip" data-id="${c.id}">${c.name}</div>`).join('');
   document.querySelectorAll('#debtCatChips .chip').forEach(chip => {
@@ -2455,6 +2585,15 @@ function openDebtSheet(){
       document.querySelectorAll('#debtCatChips .chip').forEach(c => c.classList.remove('selected'));
       chip.classList.add('selected');
       debtSelectedCat = chip.dataset.id;
+    };
+  });
+
+  $('debtDiaSemanaChips').innerHTML = WEEKDAY_SHORT.map((n,i) => `<div class="chip" data-dia="${i}">${n}</div>`).join('');
+  document.querySelectorAll('#debtDiaSemanaChips .chip').forEach(chip => {
+    chip.onclick = () => {
+      document.querySelectorAll('#debtDiaSemanaChips .chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      debtDiaSemanaSelected = parseInt(chip.dataset.dia);
     };
   });
 
@@ -2466,50 +2605,86 @@ $('btnNovaDivida').onclick = openDebtSheet;
 $('btnDebtCancel').onclick = () => $('debtOverlay').classList.remove('open');
 $('debtOverlay').onclick = (e) => { if(e.target === $('debtOverlay')) $('debtOverlay').classList.remove('open'); };
 
+$('debtFreqMensal').onclick = () => {
+  debtFreqSelected = 'mensal';
+  $('debtFreqMensal').classList.add('selected');
+  $('debtFreqSemanal').classList.remove('selected');
+  updateDebtFieldsVisibility();
+};
+$('debtFreqSemanal').onclick = () => {
+  debtFreqSelected = 'semanal';
+  $('debtFreqSemanal').classList.add('selected');
+  $('debtFreqMensal').classList.remove('selected');
+  updateDebtFieldsVisibility();
+};
+
 $('debtTipoFixa').onclick = () => {
   debtTipoSelected = 'fixa';
   $('debtTipoFixa').classList.add('selected');
   $('debtTipoVariavel').classList.remove('selected');
-  $('debtFixaFields').style.display = 'block';
+  updateDebtFieldsVisibility();
 };
 $('debtTipoVariavel').onclick = () => {
   debtTipoSelected = 'variavel';
   $('debtTipoVariavel').classList.add('selected');
   $('debtTipoFixa').classList.remove('selected');
-  $('debtFixaFields').style.display = 'none';
+  updateDebtFieldsVisibility();
 };
 
 $('btnDebtSave').onclick = () => {
   const nome = $('debtNomeInput').value.trim();
   const valor = parseFloat($('debtValorInput').value);
-  const vencimentoDia = parseInt($('debtVencimentoInput').value);
-  if(!nome || !(valor > 0) || !debtSelectedCat || !(vencimentoDia >= 1 && vencimentoDia <= 31)){
-    $('debtError').textContent = 'Preenche nome, valor, categoria e dia de vencimento (1 a 31).';
+  if(!nome || !(valor > 0) || !debtSelectedCat){
+    $('debtError').textContent = 'Preenche nome, valor e categoria.';
     return;
   }
 
-  const debt = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    nome,
-    valor,
-    categoria: debtSelectedCat,
-    tipo: debtTipoSelected,
-    vencimentoDia,
-    observacao: $('debtObsInput').value.trim(),
-  };
-
-  if(debtTipoSelected === 'fixa'){
-    debt.parcelasTotal = parseInt($('debtParcelasInput').value) || 0;
-    debt.dataInicial = $('debtDataInicialInput').value || new Date().toISOString().slice(0,10);
-    debt.paidMonths = [];
+  if(debtFreqSelected === 'semanal'){
+    if(debtDiaSemanaSelected === null){
+      $('debtError').textContent = 'Escolhe o dia da semana do pagamento.';
+      return;
+    }
+    const debt = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+      nome,
+      valor,
+      categoria: debtSelectedCat,
+      frequencia: 'semanal',
+      diaSemana: debtDiaSemanaSelected,
+      dataInicial: $('debtDataInicialInput').value || new Date().toISOString().slice(0,10),
+      paidWeeks: [],
+      observacao: $('debtObsInput').value.trim(),
+    };
+    debts.push(debt);
   } else {
-    const y = debtsViewDate.getFullYear();
-    const m = debtsViewDate.getMonth();
-    debt.referenceMonth = y + '-' + String(m+1).padStart(2,'0');
-    debt.paid = false;
+    const vencimentoDia = parseInt($('debtVencimentoInput').value);
+    if(!(vencimentoDia >= 1 && vencimentoDia <= 31)){
+      $('debtError').textContent = 'Preenche o dia de vencimento (1 a 31).';
+      return;
+    }
+    const debt = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+      nome,
+      valor,
+      categoria: debtSelectedCat,
+      frequencia: 'mensal',
+      tipo: debtTipoSelected,
+      vencimentoDia,
+      observacao: $('debtObsInput').value.trim(),
+    };
+    if(debtTipoSelected === 'fixa'){
+      debt.parcelasTotal = parseInt($('debtParcelasInput').value) || 0;
+      debt.dataInicial = $('debtDataInicialInput').value || new Date().toISOString().slice(0,10);
+      debt.paidMonths = [];
+    } else {
+      const y = debtsViewDate.getFullYear();
+      const m = debtsViewDate.getMonth();
+      debt.referenceMonth = y + '-' + String(m+1).padStart(2,'0');
+      debt.paid = false;
+    }
+    debts.push(debt);
   }
 
-  debts.push(debt);
   persistDebts();
   $('debtOverlay').classList.remove('open');
   renderDividas();
