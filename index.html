@@ -549,6 +549,7 @@
     border:1px solid var(--border);
     border-radius:var(--radius);
     padding:13px 14px;
+    cursor:pointer;
   }
   .debt-row.paid{ opacity:0.55; }
   .debt-row-top{
@@ -623,6 +624,7 @@
     gap:12px;
     padding:13px 0;
     border-bottom:1px solid var(--border);
+    cursor:pointer;
   }
   .entry-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
   .entry-info{ flex:1; min-width:0; }
@@ -1241,7 +1243,7 @@
 
       <div class="perfil-about">
         Finanças na Estrada — feito pra motoboy controlar o dinheiro sem complicação.<br><br>
-        Seus lançamentos e metas ficam salvos só neste navegador/dispositivo.
+        Seus lançamentos e metas ficam salvos na nuvem, vinculados ao seu código de acesso.
       </div>
     </div>
 
@@ -1377,7 +1379,7 @@
 <div class="overlay" id="debtOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Nova dívida</div>
+    <div class="sheet-title" id="debtSheetTitle">Nova dívida</div>
 
     <div class="field">
       <label>Nome</label>
@@ -1480,6 +1482,114 @@ const DEBT_CATS = [
 // Endereço da função que confere o código de acesso na tabela "licenses".
 const VALIDATE_LICENSE_URL = 'https://irfhbttlwrowspfavzoj.supabase.co/functions/v1/validate-license';
 
+// >>> DADOS (Supabase) <<<
+// A partir daqui os lançamentos, dívidas, metas e perfil não ficam mais
+// só no localStorage — eles são lidos/escritos direto nas tabelas do
+// Supabase, usando o código de licença (license_key) como dono dos dados.
+const SUPABASE_URL = 'https://irfhbttlwrowspfavzoj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyZmhidHRsd3Jvd3NwZmF2em9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4NTM3NTUsImV4cCI6MjEwNTQyOTc1NX0.Ytdh5ryfZiKeiIlAMgSv2a5H7rqThfxKuY4rhhWZYHA';
+const SB_REST = SUPABASE_URL + '/rest/v1';
+let licenseKey = '';
+
+function sbHeaders(extra){
+  return Object.assign({
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json',
+  }, extra || {});
+}
+async function sbGet(table, query){
+  const res = await fetch(SB_REST + '/' + table + '?' + query, { headers: sbHeaders() });
+  if(!res.ok) throw new Error('sbGet ' + table + ' falhou (' + res.status + ')');
+  return res.json();
+}
+async function sbInsert(table, row){
+  const res = await fetch(SB_REST + '/' + table, {
+    method: 'POST',
+    headers: sbHeaders({ 'Prefer': 'return=representation' }),
+    body: JSON.stringify(row)
+  });
+  if(!res.ok) throw new Error('sbInsert ' + table + ' falhou (' + res.status + ')');
+  return res.json();
+}
+async function sbUpsert(table, row, onConflict){
+  const res = await fetch(SB_REST + '/' + table + '?on_conflict=' + onConflict, {
+    method: 'POST',
+    headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=representation' }),
+    body: JSON.stringify(row)
+  });
+  if(!res.ok) throw new Error('sbUpsert ' + table + ' falhou (' + res.status + ')');
+  return res.json();
+}
+async function sbUpdate(table, match, patch){
+  const qs = Object.entries(match).map(([k,v]) => k + '=eq.' + encodeURIComponent(v)).join('&');
+  const res = await fetch(SB_REST + '/' + table + '?' + qs, {
+    method: 'PATCH',
+    headers: sbHeaders({ 'Prefer': 'return=representation' }),
+    body: JSON.stringify(patch)
+  });
+  if(!res.ok) throw new Error('sbUpdate ' + table + ' falhou (' + res.status + ')');
+  return res.json();
+}
+async function sbDelete(table, match){
+  const qs = Object.entries(match).map(([k,v]) => k + '=eq.' + encodeURIComponent(v)).join('&');
+  const res = await fetch(SB_REST + '/' + table + '?' + qs, {
+    method: 'DELETE',
+    headers: sbHeaders()
+  });
+  if(!res.ok) throw new Error('sbDelete ' + table + ' falhou (' + res.status + ')');
+  return true;
+}
+
+// converte uma dívida (formato usado no app) <-> linha da tabela debts (snake_case)
+function debtToRow(d){
+  return {
+    id: d.id,
+    license_key: licenseKey,
+    nome: d.nome,
+    valor: d.valor,
+    categoria: d.categoria,
+    frequencia: d.frequencia,
+    tipo: d.tipo || null,
+    vencimento_dia: (d.vencimentoDia !== undefined) ? d.vencimentoDia : null,
+    parcelas_total: (d.parcelasTotal !== undefined) ? d.parcelasTotal : null,
+    reference_month: d.referenceMonth || null,
+    paid: (d.paid !== undefined) ? d.paid : null,
+    paid_months: d.paidMonths || [],
+    dia_semana: (d.diaSemana !== undefined) ? d.diaSemana : null,
+    paid_weeks: d.paidWeeks || [],
+    data_inicial: d.dataInicial || null,
+    observacao: d.observacao || '',
+  };
+}
+function rowToDebt(r){
+  const d = {
+    id: r.id,
+    nome: r.nome,
+    valor: r.valor,
+    categoria: r.categoria,
+    frequencia: r.frequencia,
+    observacao: r.observacao || '',
+  };
+  if(r.frequencia === 'semanal'){
+    d.diaSemana = r.dia_semana;
+    d.dataInicial = r.data_inicial;
+    d.paidWeeks = r.paid_weeks || [];
+  } else {
+    d.tipo = r.tipo;
+    d.vencimentoDia = r.vencimento_dia;
+    if(r.tipo === 'fixa'){
+      d.parcelasTotal = r.parcelas_total || 0;
+      d.dataInicial = r.data_inicial;
+      d.paidMonths = r.paid_months || [];
+    } else {
+      d.referenceMonth = r.reference_month;
+      d.paid = !!r.paid;
+    }
+  }
+  return d;
+}
+
 let entries = [];
 let period = 'dia';
 let currentView = 'home';
@@ -1494,6 +1604,8 @@ let debtTipoSelected = 'fixa';
 let debtSelectedCat = null;
 let debtFreqSelected = 'mensal';
 let debtDiaSemanaSelected = null;
+let editingEntryId = null;
+let editingDebtId = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -1501,6 +1613,7 @@ function checkAccess(){
   let unlocked = false;
   try{ unlocked = localStorage.getItem('motoboy_unlocked') === '1'; }catch(err){}
   if(unlocked){
+    try{ licenseKey = localStorage.getItem('motoboy_unlocked_code') || ''; }catch(err){}
     $('welcome').style.display = 'none';
     $('lock').style.display = 'none';
     $('app').style.display = 'flex';
@@ -1543,6 +1656,7 @@ async function tryUnlock(){
         localStorage.setItem('motoboy_unlocked', '1');
         localStorage.setItem('motoboy_unlocked_code', code);
       }catch(err){}
+      licenseKey = code;
       $('lock').style.display = 'none';
       $('app').style.display = 'flex';
       $('bottomNav').style.display = 'flex';
@@ -1570,7 +1684,7 @@ function logout(){
 $('lockBtn').addEventListener('click', tryUnlock);
 $('lockInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') tryUnlock(); });
 $('btnLogout').addEventListener('click', () => {
-  if(confirm('Sair do app? Seus dados continuam salvos neste aparelho — é só digitar o código de acesso de novo pra entrar.')){
+  if(confirm('Sair do app? Seus dados continuam salvos — é só digitar o código de acesso de novo pra entrar.')){
     logout();
   }
 });
@@ -1645,7 +1759,7 @@ function render(){
       const info = tagInfo(e.type === 'ganho' ? APPS : CATS, e.tag);
       const d = new Date(e.date);
       const dateStr = d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) + ' · ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-      return `<div class="entry">
+      return `<div class="entry" data-id="${e.id}">
         <div class="entry-dot" style="background:${info.color}"></div>
         <div class="entry-info">
           <div class="entry-title">${info.name}${e.note ? ' — ' + escapeHtml(e.note) : ''}</div>
@@ -1657,8 +1771,11 @@ function render(){
     }).join('');
   }
 
+  document.querySelectorAll('#entryList .entry').forEach(row => {
+    row.onclick = () => openEditEntry(row.dataset.id);
+  });
   document.querySelectorAll('.entry-del').forEach(btn => {
-    btn.onclick = () => deleteEntry(btn.dataset.id);
+    btn.onclick = (e) => { e.stopPropagation(); deleteEntry(btn.dataset.id); };
   });
 
   // gastos por categoria (mesmo período selecionado)
@@ -1716,7 +1833,7 @@ function renderHome(){
       const info = tagInfo(e.type === 'ganho' ? APPS : CATS, e.tag);
       const d = new Date(e.date);
       const dateStr = d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) + ' · ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-      return `<div class="entry">
+      return `<div class="entry" data-id="${e.id}">
         <div class="entry-dot" style="background:${info.color}"></div>
         <div class="entry-info">
           <div class="entry-title">${info.name}${e.note ? ' — ' + escapeHtml(e.note) : ''}</div>
@@ -1725,6 +1842,9 @@ function renderHome(){
         <div class="entry-value ${e.type}">${e.type === 'ganho' ? '+' : '−'} ${fmt(e.value)}</div>
       </div>`;
     }).join('');
+    document.querySelectorAll('#homeRecentList .entry').forEach(row => {
+      row.onclick = () => openEditEntry(row.dataset.id);
+    });
   }
 
   renderDayGoal(ganhos, liquido);
@@ -2109,7 +2229,7 @@ function debtsForMonth(year, month){
   return out;
 }
 
-function toggleDebtPaid(id, occKey){
+async function toggleDebtPaid(id, occKey){
   const d = debts.find(x => x.id === id);
   if(!d) return;
   if(d.frequencia === 'semanal'){
@@ -2125,9 +2245,13 @@ function toggleDebtPaid(id, occKey){
     if(idx >= 0) d.paidMonths.splice(idx, 1);
     else d.paidMonths.push(occKey);
   }
-  persistDebts();
   renderDividas();
   render();
+  try{
+    await sbUpdate('debts', { id, license_key: licenseKey }, debtToRow(d));
+  }catch(err){
+    showStorageNotice();
+  }
 }
 
 function renderDividas(){
@@ -2184,7 +2308,7 @@ function renderDividas(){
         : 'Variável';
       vencTag = 'vence dia ' + debt.vencimentoDia;
     }
-    return `<div class="debt-row ${status.paid ? 'paid' : ''}">
+    return `<div class="debt-row ${status.paid ? 'paid' : ''}" data-id="${debt.id}">
       <div class="debt-row-top">
         <div class="debt-dot" style="background:${info.color}"></div>
         <div class="debt-name">${escapeHtml(debt.nome)}</div>
@@ -2202,8 +2326,11 @@ function renderDividas(){
     </div>`;
   }).join('');
 
+  document.querySelectorAll('#debtList .debt-row').forEach(row => {
+    row.onclick = () => openEditDebt(row.dataset.id);
+  });
   document.querySelectorAll('.debt-pay-btn').forEach(btn => {
-    btn.onclick = () => toggleDebtPaid(btn.dataset.id, btn.dataset.occ);
+    btn.onclick = (e) => { e.stopPropagation(); toggleDebtPaid(btn.dataset.id, btn.dataset.occ); };
   });
 }
 
@@ -2315,31 +2442,36 @@ function escapeHtml(str){
 }
 
 async function deleteEntry(id){
+  const prev = entries;
   entries = entries.filter(e => e.id !== id);
-  await persist();
   render();
-}
-
-async function persist(){
   try{
-    localStorage.setItem('motoboy_entries', JSON.stringify(entries));
+    await sbDelete('entries', { id, license_key: licenseKey });
   }catch(err){
-    if(!storageOk) return;
-    storageOk = false;
+    entries = prev;       // desfaz se não conseguiu apagar no servidor
+    render();
     showStorageNotice();
   }
 }
 
+// mantido só por compatibilidade com chamadas antigas — a escrita de
+// cada lançamento agora acontece direto no botão Salvar (ver btnSave.onclick)
+async function persist(){}
+
 async function load(){
   try{
-    const raw = localStorage.getItem('motoboy_entries');
-    entries = raw ? JSON.parse(raw) : [];
-    const rawMetas = localStorage.getItem('motoboy_metas');
-    if(rawMetas) metas = Object.assign({ faturamento: 0, economia: 0, economiaAtual: 0, metaDiaria: 0 }, JSON.parse(rawMetas));
-    const rawPerfil = localStorage.getItem('motoboy_perfil');
-    if(rawPerfil) perfilData = Object.assign({ nome: '', moto: '' }, JSON.parse(rawPerfil));
-    const rawDebts = localStorage.getItem('motoboy_debts');
-    debts = rawDebts ? JSON.parse(rawDebts) : [];
+    const [entryRows, metaRows, perfilRows, debtRows] = await Promise.all([
+      sbGet('entries', 'license_key=eq.' + encodeURIComponent(licenseKey) + '&order=date.desc'),
+      sbGet('metas', 'license_key=eq.' + encodeURIComponent(licenseKey)),
+      sbGet('perfil', 'license_key=eq.' + encodeURIComponent(licenseKey)),
+      sbGet('debts', 'license_key=eq.' + encodeURIComponent(licenseKey)),
+    ]);
+    entries = entryRows.map(r => ({ id:r.id, type:r.type, value:r.value, tag:r.tag, note:r.note || '', date:r.date }));
+    metas = metaRows[0]
+      ? { faturamento:metaRows[0].faturamento, economia:metaRows[0].economia, economiaAtual:metaRows[0].economia_atual, metaDiaria:metaRows[0].meta_diaria }
+      : { faturamento: 0, economia: 0, economiaAtual: 0, metaDiaria: 0 };
+    perfilData = perfilRows[0] ? { nome: perfilRows[0].nome || '', moto: perfilRows[0].moto || '' } : { nome: '', moto: '' };
+    debts = debtRows.map(rowToDebt);
     debts.forEach(d => { if(!d.frequencia) d.frequencia = 'mensal'; });
   }catch(err){
     storageOk = false;
@@ -2351,42 +2483,38 @@ async function load(){
   render();
 }
 
-function persistPerfil(){
+async function persistPerfil(){
   try{
-    localStorage.setItem('motoboy_perfil', JSON.stringify(perfilData));
+    await sbUpsert('perfil', Object.assign({ license_key: licenseKey }, perfilData), 'license_key');
   }catch(err){
-    if(!storageOk) return;
-    storageOk = false;
     showStorageNotice();
   }
 }
 
-function persistMetas(){
+async function persistMetas(){
   try{
-    localStorage.setItem('motoboy_metas', JSON.stringify(metas));
+    await sbUpsert('metas', {
+      license_key: licenseKey,
+      faturamento: metas.faturamento,
+      economia: metas.economia,
+      economia_atual: metas.economiaAtual,
+      meta_diaria: metas.metaDiaria,
+    }, 'license_key');
   }catch(err){
-    if(!storageOk) return;
-    storageOk = false;
     showStorageNotice();
   }
 }
 
-function persistDebts(){
-  try{
-    localStorage.setItem('motoboy_debts', JSON.stringify(debts));
-  }catch(err){
-    if(!storageOk) return;
-    storageOk = false;
-    showStorageNotice();
-  }
-}
+// mantido só por compatibilidade — dívidas agora são gravadas direto
+// em cada ação (criar, marcar/desmarcar paga), ver btnDebtSave e toggleDebtPaid
+async function persistDebts(){}
 
 function showStorageNotice(){
   if(document.getElementById('storageNotice')) return;
   const el = document.createElement('div');
   el.id = 'storageNotice';
   el.style.cssText = 'margin:0 20px 4px 20px; padding:9px 12px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; font-size:12px; color:var(--text-muted);';
-  el.textContent = 'Não consegui salvar os dados nesse navegador (talvez modo anônimo) — os lançamentos ficam só enquanto o app estiver aberto.';
+  el.textContent = 'Não consegui salvar/carregar seus dados agora — confira sua internet e tente de novo.';
   const header = document.querySelector('header');
   header.parentNode.insertBefore(el, header.nextSibling);
 }
@@ -2439,12 +2567,15 @@ $('btnNovoGanho').onclick = () => { $('novoOverlay').classList.remove('open'); o
 $('btnNovoGasto').onclick = () => { $('novoOverlay').classList.remove('open'); openSheet('gasto'); };
 
 // SHEET
-function openSheet(type){
+function openSheet(type, editEntry){
   sheetType = type;
-  selectedTag = null;
-  $('amountInput').value = '';
-  $('noteInput').value = '';
-  $('sheetTitle').textContent = type === 'ganho' ? 'Novo ganho' : 'Novo gasto';
+  editingEntryId = editEntry ? editEntry.id : null;
+  selectedTag = editEntry ? editEntry.tag : null;
+  $('amountInput').value = editEntry ? editEntry.value : '';
+  $('noteInput').value = editEntry ? editEntry.note : '';
+  $('sheetTitle').textContent = editEntry
+    ? (type === 'ganho' ? 'Editar ganho' : 'Editar gasto')
+    : (type === 'ganho' ? 'Novo ganho' : 'Novo gasto');
 
   if(type === 'ganho'){
     $('appFieldWrap').style.display = 'block';
@@ -2457,8 +2588,19 @@ function openSheet(type){
     $('catChips').innerHTML = CATS.map(c => `<div class="chip" data-id="${c.id}">${c.name}</div>`).join('');
     bindChips('catChips');
   }
+  if(editEntry){
+    const containerId = type === 'ganho' ? 'appChips' : 'catChips';
+    const chip = document.querySelector('#' + containerId + ' .chip[data-id="' + editEntry.tag + '"]');
+    if(chip) chip.classList.add('selected');
+  }
   updateSaveState();
   $('overlay').classList.add('open');
+}
+
+function openEditEntry(id){
+  const entry = entries.find(e => e.id === id);
+  if(!entry) return;
+  openSheet(entry.type, entry);
 }
 
 function bindChips(containerId){
@@ -2478,23 +2620,51 @@ function updateSaveState(){
 }
 
 $('amountInput').addEventListener('input', updateSaveState);
-$('btnCancel').onclick = () => $('overlay').classList.remove('open');
-$('overlay').onclick = (e) => { if(e.target === $('overlay')) $('overlay').classList.remove('open'); };
+$('btnCancel').onclick = () => { editingEntryId = null; $('overlay').classList.remove('open'); };
+$('overlay').onclick = (e) => { if(e.target === $('overlay')){ editingEntryId = null; $('overlay').classList.remove('open'); } };
 
 $('btnSave').onclick = async () => {
   const val = parseFloat($('amountInput').value);
   if(!(val > 0 && selectedTag)) return;
-  entries.push({
+  const btn = $('btnSave');
+  btn.disabled = true;
+
+  if(editingEntryId){
+    const entry = entries.find(e => e.id === editingEntryId);
+    if(!entry){ btn.disabled = false; return; }
+    const patch = { value: val, tag: selectedTag, note: $('noteInput').value.trim() };
+    try{
+      await sbUpdate('entries', { id: editingEntryId, license_key: licenseKey }, patch);
+      Object.assign(entry, patch);
+      editingEntryId = null;
+      $('overlay').classList.remove('open');
+      render();
+    }catch(err){
+      showStorageNotice();
+    }finally{
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     type: sheetType,
     value: val,
     tag: selectedTag,
     note: $('noteInput').value.trim(),
     date: new Date().toISOString(),
-  });
-  await persist();
-  $('overlay').classList.remove('open');
-  render();
+  };
+  try{
+    await sbInsert('entries', Object.assign({ license_key: licenseKey }, entry));
+    entries.push(entry);
+    $('overlay').classList.remove('open');
+    render();
+  }catch(err){
+    showStorageNotice();
+  }finally{
+    btn.disabled = false;
+  }
 };
 
 // METAS
@@ -2561,25 +2731,28 @@ function updateDebtFieldsVisibility(){
   $('debtDataInicialLabel').textContent = mensal ? 'Data inicial' : 'A partir de (opcional)';
 }
 
-function openDebtSheet(){
-  $('debtNomeInput').value = '';
-  $('debtValorInput').value = '';
-  $('debtVencimentoInput').value = '';
-  $('debtParcelasInput').value = '';
-  $('debtDataInicialInput').value = new Date().toISOString().slice(0,10);
-  $('debtObsInput').value = '';
+function openDebtSheet(editDebt){
+  editingDebtId = editDebt ? editDebt.id : null;
+  $('debtSheetTitle').textContent = editDebt ? 'Editar dívida' : 'Nova dívida';
+  $('debtNomeInput').value = editDebt ? editDebt.nome : '';
+  $('debtValorInput').value = editDebt ? editDebt.valor : '';
+  $('debtVencimentoInput').value = editDebt && editDebt.frequencia === 'mensal' ? editDebt.vencimentoDia : '';
+  $('debtParcelasInput').value = editDebt && editDebt.tipo === 'fixa' ? (editDebt.parcelasTotal || '') : '';
+  $('debtDataInicialInput').value = (editDebt && editDebt.dataInicial) ? editDebt.dataInicial : new Date().toISOString().slice(0,10);
+  $('debtObsInput').value = editDebt ? editDebt.observacao : '';
   $('debtError').textContent = '';
-  debtSelectedCat = null;
-  debtTipoSelected = 'fixa';
-  debtFreqSelected = 'mensal';
-  debtDiaSemanaSelected = null;
-  $('debtTipoFixa').classList.add('selected');
-  $('debtTipoVariavel').classList.remove('selected');
-  $('debtFreqMensal').classList.add('selected');
-  $('debtFreqSemanal').classList.remove('selected');
+  debtSelectedCat = editDebt ? editDebt.categoria : null;
+  debtTipoSelected = editDebt ? (editDebt.tipo || 'fixa') : 'fixa';
+  debtFreqSelected = editDebt ? editDebt.frequencia : 'mensal';
+  debtDiaSemanaSelected = editDebt && editDebt.frequencia === 'semanal' ? editDebt.diaSemana : null;
+
+  $('debtTipoFixa').classList.toggle('selected', debtTipoSelected === 'fixa');
+  $('debtTipoVariavel').classList.toggle('selected', debtTipoSelected === 'variavel');
+  $('debtFreqMensal').classList.toggle('selected', debtFreqSelected === 'mensal');
+  $('debtFreqSemanal').classList.toggle('selected', debtFreqSelected === 'semanal');
   updateDebtFieldsVisibility();
 
-  $('debtCatChips').innerHTML = DEBT_CATS.map(c => `<div class="chip" data-id="${c.id}">${c.name}</div>`).join('');
+  $('debtCatChips').innerHTML = DEBT_CATS.map(c => `<div class="chip${c.id === debtSelectedCat ? ' selected' : ''}" data-id="${c.id}">${c.name}</div>`).join('');
   document.querySelectorAll('#debtCatChips .chip').forEach(chip => {
     chip.onclick = () => {
       document.querySelectorAll('#debtCatChips .chip').forEach(c => c.classList.remove('selected'));
@@ -2588,7 +2761,7 @@ function openDebtSheet(){
     };
   });
 
-  $('debtDiaSemanaChips').innerHTML = WEEKDAY_SHORT.map((n,i) => `<div class="chip" data-dia="${i}">${n}</div>`).join('');
+  $('debtDiaSemanaChips').innerHTML = WEEKDAY_SHORT.map((n,i) => `<div class="chip${i === debtDiaSemanaSelected ? ' selected' : ''}" data-dia="${i}">${n}</div>`).join('');
   document.querySelectorAll('#debtDiaSemanaChips .chip').forEach(chip => {
     chip.onclick = () => {
       document.querySelectorAll('#debtDiaSemanaChips .chip').forEach(c => c.classList.remove('selected'));
@@ -2601,9 +2774,15 @@ function openDebtSheet(){
   const debtSheet = $('debtOverlay').querySelector('.sheet');
   if(debtSheet) debtSheet.scrollTop = 0;   // sempre abre mostrando o Nome no topo
 }
-$('btnNovaDivida').onclick = openDebtSheet;
-$('btnDebtCancel').onclick = () => $('debtOverlay').classList.remove('open');
-$('debtOverlay').onclick = (e) => { if(e.target === $('debtOverlay')) $('debtOverlay').classList.remove('open'); };
+
+function openEditDebt(id){
+  const debt = debts.find(d => d.id === id);
+  if(!debt) return;
+  openDebtSheet(debt);
+}
+$('btnNovaDivida').onclick = () => openDebtSheet();
+$('btnDebtCancel').onclick = () => { editingDebtId = null; $('debtOverlay').classList.remove('open'); };
+$('debtOverlay').onclick = (e) => { if(e.target === $('debtOverlay')){ editingDebtId = null; $('debtOverlay').classList.remove('open'); } };
 
 $('debtFreqMensal').onclick = () => {
   debtFreqSelected = 'mensal';
@@ -2631,7 +2810,7 @@ $('debtTipoVariavel').onclick = () => {
   updateDebtFieldsVisibility();
 };
 
-$('btnDebtSave').onclick = () => {
+$('btnDebtSave').onclick = async () => {
   const nome = $('debtNomeInput').value.trim();
   const valor = parseFloat($('debtValorInput').value);
   if(!nome || !(valor > 0) || !debtSelectedCat){
@@ -2639,31 +2818,33 @@ $('btnDebtSave').onclick = () => {
     return;
   }
 
+  const original = editingDebtId ? debts.find(d => d.id === editingDebtId) : null;
+
+  let debt;
   if(debtFreqSelected === 'semanal'){
     if(debtDiaSemanaSelected === null){
       $('debtError').textContent = 'Escolhe o dia da semana do pagamento.';
       return;
     }
-    const debt = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    debt = {
+      id: editingDebtId || (Date.now().toString(36) + Math.random().toString(36).slice(2,7)),
       nome,
       valor,
       categoria: debtSelectedCat,
       frequencia: 'semanal',
       diaSemana: debtDiaSemanaSelected,
       dataInicial: $('debtDataInicialInput').value || new Date().toISOString().slice(0,10),
-      paidWeeks: [],
+      paidWeeks: (original && original.frequencia === 'semanal') ? (original.paidWeeks || []) : [],
       observacao: $('debtObsInput').value.trim(),
     };
-    debts.push(debt);
   } else {
     const vencimentoDia = parseInt($('debtVencimentoInput').value);
     if(!(vencimentoDia >= 1 && vencimentoDia <= 31)){
       $('debtError').textContent = 'Preenche o dia de vencimento (1 a 31).';
       return;
     }
-    const debt = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    debt = {
+      id: editingDebtId || (Date.now().toString(36) + Math.random().toString(36).slice(2,7)),
       nome,
       valor,
       categoria: debtSelectedCat,
@@ -2675,20 +2856,36 @@ $('btnDebtSave').onclick = () => {
     if(debtTipoSelected === 'fixa'){
       debt.parcelasTotal = parseInt($('debtParcelasInput').value) || 0;
       debt.dataInicial = $('debtDataInicialInput').value || new Date().toISOString().slice(0,10);
-      debt.paidMonths = [];
+      debt.paidMonths = (original && original.frequencia === 'mensal' && original.tipo === 'fixa') ? (original.paidMonths || []) : [];
     } else {
+      const isSameShape = original && original.frequencia === 'mensal' && original.tipo === 'variavel';
       const y = debtsViewDate.getFullYear();
       const m = debtsViewDate.getMonth();
-      debt.referenceMonth = y + '-' + String(m+1).padStart(2,'0');
-      debt.paid = false;
+      debt.referenceMonth = isSameShape ? original.referenceMonth : (y + '-' + String(m+1).padStart(2,'0'));
+      debt.paid = isSameShape ? !!original.paid : false;
     }
-    debts.push(debt);
   }
 
-  persistDebts();
-  $('debtOverlay').classList.remove('open');
-  renderDividas();
-  renderPerfilDividas();
+  const btn = $('btnDebtSave');
+  btn.disabled = true;
+  try{
+    if(editingDebtId){
+      await sbUpdate('debts', { id: editingDebtId, license_key: licenseKey }, debtToRow(debt));
+      const idx = debts.findIndex(d => d.id === editingDebtId);
+      if(idx >= 0) debts[idx] = debt; else debts.push(debt);
+      editingDebtId = null;
+    } else {
+      await sbInsert('debts', debtToRow(debt));
+      debts.push(debt);
+    }
+    $('debtOverlay').classList.remove('open');
+    renderDividas();
+    renderPerfilDividas();
+  }catch(err){
+    $('debtError').textContent = 'Não deu pra salvar agora. Confira sua internet e tente de novo.';
+  }finally{
+    btn.disabled = false;
+  }
 };
 </script>
 
