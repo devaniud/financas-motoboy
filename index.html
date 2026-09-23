@@ -968,6 +968,29 @@
   .perfil-stat .sub{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
 
 
+
+  /* CRONÔMETRO DE JORNADA */
+  .work-timer-card{
+    margin:14px 20px 0;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px 18px;
+  }
+  .work-timer-top{display:flex;justify-content:space-between;align-items:center;gap:12px;}
+  .work-timer-label{font-size:11.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.055em;}
+  .work-timer-status{font-size:11px;color:var(--text-muted);}
+  .work-timer-status.active{color:var(--accent);}
+  .work-timer-time{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:38px;line-height:1;margin-top:5px;letter-spacing:.02em;}
+  .work-timer-metrics{display:flex;gap:22px;margin-top:10px;}
+  .work-timer-metric .k{font-size:10.5px;color:var(--text-muted);display:block;margin-bottom:2px;}
+  .work-timer-metric .v{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;}
+  .work-timer-actions{display:flex;gap:8px;margin-top:13px;}
+  .work-timer-btn{flex:1;border-radius:10px;padding:10px 8px;font-family:'Inter',sans-serif;font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text);}
+  .work-timer-btn.primary{background:var(--accent);border-color:var(--accent);color:#14171A;}
+  .work-timer-btn.stop{color:var(--expense);}
+  .work-timer-note{font-size:11px;color:var(--text-muted);margin-top:9px;line-height:1.4;}
+
   /* =========================================================
      PISTACASH — REFINO VISUAL 1.0
      Mantém a lógica/JS existentes; foco em hierarquia e leitura.
@@ -1147,6 +1170,27 @@
           <div><span class="k">Lucro hoje</span><span class="v" id="dayGoalLucro">R$ 0,00</span></div>
         </div>
         <div class="day-goal-note" id="dayGoalNote"></div>
+      </div>
+
+
+      <div class="work-timer-card" id="workTimerCard">
+        <div class="work-timer-top">
+          <div>
+            <div class="work-timer-label">Jornada de hoje</div>
+            <div class="work-timer-time" id="workTimerTime">00:00:00</div>
+          </div>
+          <div class="work-timer-status" id="workTimerStatus">Parado</div>
+        </div>
+        <div class="work-timer-metrics">
+          <div class="work-timer-metric"><span class="k">Valor/h líquido</span><span class="v" id="workTimerHourly">R$ 0,00</span></div>
+          <div class="work-timer-metric"><span class="k">Líquido hoje</span><span class="v" id="workTimerNet">R$ 0,00</span></div>
+        </div>
+        <div class="work-timer-actions">
+          <button type="button" class="work-timer-btn primary" id="workTimerStart">▶ Iniciar trabalho</button>
+          <button type="button" class="work-timer-btn" id="workTimerPause" style="display:none;">⏸ Pausar</button>
+          <button type="button" class="work-timer-btn stop" id="workTimerStop" style="display:none;">■ Encerrar</button>
+        </div>
+        <div class="work-timer-note" id="workTimerNote">Cronometre sua jornada para descobrir quanto seu trabalho rende por hora.</div>
       </div>
 
       <div class="dash-hero" style="padding-top:24px;">
@@ -1798,6 +1842,7 @@ $('btnLogout').addEventListener('click', () => {
     logout();
   }
 });
+setupWorkTimer();
 checkAccess();
 
 function fmt(n){
@@ -1817,6 +1862,115 @@ function startOfPeriod(p){
   if(p === 'mes'){
     return new Date(now.getFullYear(), now.getMonth(), 1);
   }
+}
+
+
+
+// ===== Jornada de trabalho / valor por hora =====
+const WORK_TIMER_KEY = 'pistacash_work_timer_v1';
+let workTimer = { date:'', running:false, startedAt:null, accumulated:0 };
+let workTimerInterval = null;
+
+function workTimerDateKey(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function loadWorkTimer(){
+  try{
+    const raw = localStorage.getItem(WORK_TIMER_KEY);
+    if(raw) workTimer = Object.assign(workTimer, JSON.parse(raw));
+  }catch(err){}
+  const today = workTimerDateKey();
+  if(workTimer.date !== today){ workTimer = {date:today,running:false,startedAt:null,accumulated:0}; saveWorkTimer(); }
+  if(workTimer.running && workTimer.startedAt) startWorkTimerTick();
+  renderWorkTimer();
+}
+function saveWorkTimer(){
+  try{ localStorage.setItem(WORK_TIMER_KEY, JSON.stringify(workTimer)); }catch(err){}
+}
+function currentWorkSeconds(){
+  let sec = Number(workTimer.accumulated) || 0;
+  if(workTimer.running && workTimer.startedAt){
+    sec += Math.max(0, (Date.now() - Number(workTimer.startedAt)) / 1000);
+  }
+  return sec;
+}
+function formatWorkTime(sec){
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  return [h,m,s].map((v,i)=> i===0 ? String(v).padStart(2,'0') : String(v).padStart(2,'0')).join(':');
+}
+function startWorkTimerTick(){
+  clearInterval(workTimerInterval);
+  workTimerInterval = setInterval(renderWorkTimer, 1000);
+}
+function startWorkTimer(){
+  if(workTimer.running) return;
+  const today = workTimerDateKey();
+  if(workTimer.date !== today) workTimer = {date:today,running:false,startedAt:null,accumulated:0};
+  workTimer.running = true;
+  workTimer.startedAt = Date.now();
+  saveWorkTimer();
+  startWorkTimerTick();
+  renderWorkTimer();
+}
+function pauseWorkTimer(){
+  if(!workTimer.running) return;
+  workTimer.accumulated = currentWorkSeconds();
+  workTimer.running = false;
+  workTimer.startedAt = null;
+  saveWorkTimer();
+  clearInterval(workTimerInterval);
+  workTimerInterval = null;
+  renderWorkTimer();
+}
+function stopWorkTimer(){
+  if(workTimer.running) workTimer.accumulated = currentWorkSeconds();
+  workTimer.running = false;
+  workTimer.startedAt = null;
+  saveWorkTimer();
+  clearInterval(workTimerInterval);
+  workTimerInterval = null;
+  renderWorkTimer(true);
+}
+function renderWorkTimer(justStopped){
+  const timeEl = $('workTimerTime');
+  if(!timeEl) return;
+  const today = workTimerDateKey();
+  if(workTimer.date !== today){ workTimer = {date:today,running:false,startedAt:null,accumulated:0}; saveWorkTimer(); }
+  const seconds = currentWorkSeconds();
+  const start = startOfPeriod('dia');
+  const todayEntries = entries.filter(e => new Date(e.date) >= start);
+  const ganhos = todayEntries.filter(e => e.type === 'ganho').reduce((sum,e)=>sum+e.value,0);
+  const gastos = todayEntries.filter(e => e.type === 'gasto').reduce((sum,e)=>sum+e.value,0);
+  const liquido = ganhos - gastos;
+  const hours = seconds / 3600;
+  const hourly = hours > 0 ? liquido / hours : 0;
+  timeEl.textContent = formatWorkTime(seconds);
+  $('workTimerStatus').textContent = workTimer.running ? '● Trabalhando' : (seconds > 0 ? 'Pausado' : 'Parado');
+  $('workTimerStatus').className = 'work-timer-status' + (workTimer.running ? ' active' : '');
+  $('workTimerHourly').textContent = fmt(hourly);
+  $('workTimerNet').textContent = fmt(liquido);
+  $('workTimerStart').style.display = workTimer.running ? 'none' : 'block';
+  $('workTimerPause').style.display = workTimer.running ? 'block' : 'none';
+  $('workTimerStop').style.display = seconds > 0 ? 'block' : 'none';
+  if(justStopped){
+    $('workTimerNote').textContent = 'Jornada encerrada. Seu valor/h foi calculado com o líquido de hoje.';
+  } else if(workTimer.running){
+    $('workTimerNote').textContent = 'Cronômetro ativo. Você pode pausar sem perder o tempo já contabilizado.';
+  } else if(seconds > 0){
+    $('workTimerNote').textContent = 'Jornada pausada. Continue quando voltar para a rua.';
+  } else {
+    $('workTimerNote').textContent = 'Cronometre sua jornada para descobrir quanto seu trabalho rende por hora.';
+  }
+}
+function setupWorkTimer(){
+  const a=$('workTimerStart'), b=$('workTimerPause'), c=$('workTimerStop');
+  if(!a) return;
+  a.addEventListener('click', startWorkTimer);
+  b.addEventListener('click', pauseWorkTimer);
+  c.addEventListener('click', stopWorkTimer);
+  loadWorkTimer();
 }
 
 function tagInfo(list, id){
@@ -1958,6 +2112,7 @@ function renderHome(){
   }
 
   renderDayGoal(ganhos, liquido);
+  renderWorkTimer();
   renderHomeDebts();
   renderHomeGoals();
 }
