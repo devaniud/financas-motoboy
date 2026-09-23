@@ -1842,7 +1842,6 @@ $('btnLogout').addEventListener('click', () => {
     logout();
   }
 });
-setupWorkTimer();
 checkAccess();
 
 function fmt(n){
@@ -1871,6 +1870,11 @@ const WORK_TIMER_KEY = 'pistacash_work_timer_v1';
 let workTimer = { date:'', running:false, startedAt:null, accumulated:0 };
 let workTimerInterval = null;
 
+// data de hoje no horário local (YYYY-MM-DD). toISOString() usa UTC e, à noite no Brasil, já cai no dia seguinte.
+function todayLocalStr(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
 function workTimerDateKey(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -1987,6 +1991,10 @@ document.addEventListener('visibilitychange', function(){
     renderWorkTimer();
   }
 });
+
+// Só liga o cronômetro depois que workTimer/WORK_TIMER_KEY já foram declarados
+// (antes era chamado lá em cima e quebrava o script inteiro).
+setupWorkTimer();
 
 function tagInfo(list, id){
   return list.find(x => x.id === id) || { name:id, color:'#9AA1A9' };
@@ -3018,7 +3026,7 @@ function openDebtSheet(editDebt){
   $('debtValorInput').value = editDebt ? editDebt.valor : '';
   $('debtVencimentoInput').value = editDebt && editDebt.frequencia === 'mensal' ? editDebt.vencimentoDia : '';
   $('debtParcelasInput').value = editDebt && editDebt.tipo === 'fixa' ? (editDebt.parcelasTotal || '') : '';
-  $('debtDataInicialInput').value = (editDebt && editDebt.dataInicial) ? editDebt.dataInicial : new Date().toISOString().slice(0,10);
+  $('debtDataInicialInput').value = (editDebt && editDebt.dataInicial) ? editDebt.dataInicial : todayLocalStr();
   $('debtObsInput').value = editDebt ? editDebt.observacao : '';
   $('debtError').textContent = '';
   debtSelectedCat = editDebt ? editDebt.categoria : null;
@@ -3113,7 +3121,7 @@ $('btnDebtSave').onclick = async () => {
       categoria: debtSelectedCat,
       frequencia: 'semanal',
       diaSemana: debtDiaSemanaSelected,
-      dataInicial: $('debtDataInicialInput').value || new Date().toISOString().slice(0,10),
+      dataInicial: $('debtDataInicialInput').value || todayLocalStr(),
       paidWeeks: (original && original.frequencia === 'semanal') ? (original.paidWeeks || []) : [],
       observacao: $('debtObsInput').value.trim(),
     };
@@ -3135,7 +3143,7 @@ $('btnDebtSave').onclick = async () => {
     };
     if(debtTipoSelected === 'fixa'){
       debt.parcelasTotal = parseInt($('debtParcelasInput').value) || 0;
-      debt.dataInicial = $('debtDataInicialInput').value || new Date().toISOString().slice(0,10);
+      debt.dataInicial = $('debtDataInicialInput').value || todayLocalStr();
       debt.paidMonths = (original && original.frequencia === 'mensal' && original.tipo === 'fixa') ? (original.paidMonths || []) : [];
     } else {
       const isSameShape = original && original.frequencia === 'mensal' && original.tipo === 'variavel';
