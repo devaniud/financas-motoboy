@@ -1902,7 +1902,10 @@ function formatWorkTime(sec){
 }
 function startWorkTimerTick(){
   clearInterval(workTimerInterval);
-  workTimerInterval = setInterval(renderWorkTimer, 1000);
+  renderWorkTimer();
+  workTimerInterval = setInterval(function(){
+    renderWorkTimer();
+  }, 1000);
 }
 function startWorkTimer(){
   if(workTimer.running) return;
@@ -1966,12 +1969,24 @@ function renderWorkTimer(justStopped){
 }
 function setupWorkTimer(){
   const a=$('workTimerStart'), b=$('workTimerPause'), c=$('workTimerStop');
-  if(!a) return;
-  a.addEventListener('click', startWorkTimer);
-  b.addEventListener('click', pauseWorkTimer);
-  c.addEventListener('click', stopWorkTimer);
+  if(!a || !b || !c) return;
+
+  // Usa onclick diretamente para evitar que o botão perca o evento
+  // caso a tela seja redesenhada pelo app.
+  a.onclick = function(e){ e.preventDefault(); startWorkTimer(); };
+  b.onclick = function(e){ e.preventDefault(); pauseWorkTimer(); };
+  c.onclick = function(e){ e.preventDefault(); stopWorkTimer(); };
+
   loadWorkTimer();
 }
+
+// Garante que a contagem seja atualizada quando o app volta do segundo plano.
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible'){
+    if(workTimer.running && workTimer.startedAt) startWorkTimerTick();
+    renderWorkTimer();
+  }
+});
 
 function tagInfo(list, id){
   return list.find(x => x.id === id) || { name:id, color:'#9AA1A9' };
