@@ -966,6 +966,108 @@
   .perfil-stat .v{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:21px; margin-top:2px; }
   .perfil-stat .v.negative{ color:var(--expense); }
   .perfil-stat .sub{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
+
+
+  /* =========================================================
+     PISTACASH — REFINO VISUAL 1.0
+     Mantém a lógica/JS existentes; foco em hierarquia e leitura.
+     ========================================================= */
+  body{ -webkit-font-smoothing:antialiased; }
+  #app{ padding-bottom:108px; }
+
+  /* HOME: primeira tela mais orientada à decisão do motoboy */
+  .home-greeting{ padding:24px 20px 2px; }
+  .home-greeting-hi{ font-size:12.5px; }
+  .home-greeting-title{ font-size:30px; letter-spacing:-.01em; margin-top:2px; }
+
+  .day-goal-card{
+    margin:16px 20px 0 !important;
+    padding:19px 18px 17px;
+    border-color:#3B4147;
+    box-shadow:0 7px 22px rgba(0,0,0,.24);
+  }
+  .day-goal-title{ font-size:12px; text-transform:uppercase; letter-spacing:.055em; }
+  .day-goal-answer{ font-size:30px; margin-bottom:13px; }
+  .day-goal-track{ height:8px; border-radius:99px; }
+  .day-goal-meta{ margin-top:-3px; }
+  .day-goal-stats{ gap:18px; }
+
+  /* O líquido é a informação financeira principal da Home */
+  #viewHome > .dash-hero{
+    margin:14px 20px 0;
+    padding:18px 18px 17px !important;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+  }
+  #viewHome .dash-hero .section-title{
+    margin-bottom:10px !important;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.055em;
+  }
+  #viewHome .dash-hero-label{ font-size:12px; }
+  #viewHome .dash-hero-value{ font-size:50px; }
+  #viewHome .dash-hero-sub{ margin-top:12px; gap:26px; }
+
+  /* Evita duplicidade: o botão central "Novo" já é a ação primária */
+  #viewHome .home-cta{ display:none; }
+  #viewHome .home-quick-list{ padding-top:22px !important; }
+  #viewHome .home-quick-list + .home-quick-list{ padding-top:24px !important; }
+  #viewHome .section-title{ margin-bottom:9px; }
+
+  /* Listas da Home com mais respiro e menos aparência de tabela */
+  #homeRecentList .entry,
+  #homeDebtList .debt-item{ border-radius:11px; }
+
+  /* DASHBOARD: primeiro resultado, depois análise */
+  #viewDashboard > .dash-hero{
+    padding:25px 20px 6px;
+  }
+  #viewDashboard .dash-hero-label{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:.055em;
+  }
+  #viewDashboard .dash-hero-value{ font-size:52px; }
+  #viewDashboard .dash-cards{ padding-top:18px; gap:10px; }
+  #viewDashboard .dash-card{ padding:15px; box-shadow:0 5px 16px rgba(0,0,0,.18); }
+  #viewDashboard .dash-card-value{ font-size:23px; }
+  #viewDashboard .metric-list{ margin-top:2px; }
+  #viewDashboard .donut-wrap,
+  #viewDashboard .trend,
+  #viewDashboard .charts-wrap{ margin-top:6px; }
+
+  /* Separadores discretos entre blocos longos do Dashboard */
+  #viewDashboard .donut-wrap,
+  #viewDashboard .trend,
+  #viewDashboard .charts-wrap{
+    border-top:1px solid rgba(52,57,63,.72);
+    padding-top:20px;
+  }
+
+  /* Navegação inferior: menos pesada, mantendo o botão Novo dominante */
+  .bottom-nav-inner{
+    padding-top:8px;
+    background:rgba(31,35,40,.97);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+  }
+  .nav-item{ font-size:10.5px; }
+  .nav-item.active{ font-weight:700; }
+  .nav-center-circle{ width:52px; height:52px; }
+
+  /* Títulos de seção mais consistentes */
+  .section-title{ letter-spacing:.005em; }
+
+  @media (max-width:360px){
+    .home-greeting-title{ font-size:27px; }
+    #viewHome .dash-hero-value,
+    #viewDashboard .dash-hero-value{ font-size:45px; }
+    .day-goal-answer{ font-size:27px; }
+    .dash-card{ padding:12px; }
+  }
+
 </style>
 </head>
 <body>
@@ -1033,7 +1135,7 @@
     <div id="viewHome" class="view-section">
       <div class="home-greeting">
         <div class="home-greeting-hi" id="homeGreetingHi">Boa estrada 👋</div>
-        <div class="home-greeting-title">Meta do dia</div>
+        <div class="home-greeting-title">Seu dia na estrada</div>
       </div>
       <div class="day-goal-card" id="dayGoalCard" style="margin-top:10px;">
         <div class="day-goal-title">Já posso ir pra casa?</div>
