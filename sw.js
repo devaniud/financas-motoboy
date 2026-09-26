@@ -25,18 +25,19 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if(req.method !== 'GET') return;
-  if(req.url.indexOf('supabase.co') !== -1) return;
+  if (req.method !== 'GET') return;
+  if (req.url.indexOf('supabase.co') !== -1) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req).then((res) => {
-        if(res && res.ok && req.url.indexOf(self.location.origin) === 0){
+        if (res && res.ok && req.url.indexOf(self.location.origin) === 0) {
           const resClone = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
         }
         return res;
       }).catch(() => cached);
+
       return cached || network;
     })
   );
